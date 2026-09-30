@@ -1,0 +1,40 @@
+schema: spec-driven
+
+# Project context — shown to AI when creating artifacts for EVERY change.
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  项目：litellm-provider —— 围绕 LiteLLM provider 插件的工作区总仓库，统一管理三个独立 git 仓库：
+  litellm-discovery-core（宿主无关 core）、opencode-litellm-provider（OpenCode 插件）、
+  pi-litellm-provider（Pi 扩展）。子目录是各自独立的 GitHub 仓库（各有 remote / CI / 发版 / openspec），
+  被总仓库 gitignore，不属于总仓库历史。
+
+  本仓库的 openspec 只放**跨仓库**变更：同时影响多个仓库的契约、流程或共享标准
+  （如 core 公共 API 变化、跨仓库发版顺序、共享测试标准）。只影响单个仓库的变更放在该仓库自己的 openspec。
+
+  依赖方向：core 在构建期被两个插件按完整 SHA 编入 dist（记录于 dist/core-provenance.json）；
+  插件运行时不下载 core，任何仓库的构建/安装/运行都不得依赖平级目录。
+
+# Per-artifact rules — injected into the corresponding artifact instructions.
+rules:
+  proposal:
+    - 必须逐一列出受影响的仓库，并说明每个仓库各自要改什么、哪些仓库不受影响
+    - 必须说明是否改变 core 与插件适配层的边界（core 不得引入宿主 SDK，插件不得复制 core 业务逻辑）
+  design:
+    - 必须给出跨仓库合入顺序（通常 core 先合入 main，再由插件通过 build:dist 拉取新 SHA），以及每步的回滚方式
+    - 涉及 core 公共 API 变化时，必须说明两个插件的适配方案与兼容窗口
+  tasks:
+    - 按仓库分组列任务，每个仓库的任务包含该仓库 AGENTS.md 规定的提交前校验命令
+    - 每个仓库各自一个功能分支和 PR；tasks 中标明 PR 之间的依赖
+    - 涉及用户可见行为的仓库必须包含 README 更新任务
+
+# Per-operation guidance.
+operations:
+  apply:
+    guidance:
+      - 进入子仓库工作时，先读并遵守该子仓库的 AGENTS.md
+      - 密钥一律不写入仓库与测试 fixtures；示例使用 sk-xxx、http://litellm.example:4000
+      - 提交使用 conventional commits；不得把子仓库文件提交进总仓库
+      - 不自行合并 PR、打 tag、创建 Release 或推送到 main

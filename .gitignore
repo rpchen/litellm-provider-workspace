@@ -1,0 +1,36 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Temporary workspace (safe to clear; not committed)
+.tmp/
+
+# Dependencies and build output
+node_modules/
+*.tgz
+
+# Tool-local scratch state. Project skills have ONE copy in .agents/skills (agent-neutral);
+# never create .claude/, .pi/, .opencode/ or .codex/ skill copies in this workspace.
+.claude/worktrees/
+.claude/settings.local.json
+.pi/fabric/
+.codex/
+
+# Agent-tool-specific skill copies must not exist at all; keep them untracked as a safety net.
+.claude/skills/
+.pi/skills/
+.opencode/skills/
+
+# OS/editor/logs
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Nested independent repos: each has its own git history, remote, CI and releases.
+# Managed through workspace.json + scripts/workspace.mjs, never tracked here.
+/litellm-discovery-core/
+/opencode-litellm-provider/
+/pi-litellm-provider/

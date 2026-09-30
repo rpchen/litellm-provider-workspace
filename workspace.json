@@ -1,0 +1,51 @@
+{
+  "repos": [
+    {
+      "name": "litellm-discovery-core",
+      "role": "宿主无关的 discovery core（被两个插件在构建期编入 dist）",
+      "url": "https://github.com/rpchen/litellm-discovery-core.git",
+      "branch": "main",
+      "install": ["npm", "ci"],
+      "verify": [
+        ["npm", "run", "typecheck"],
+        ["bun", "test"],
+        ["npm", "run", "build:dist"],
+        ["npm", "run", "test:package"],
+        ["npm", "run", "validate:spec"]
+      ]
+    },
+    {
+      "name": "opencode-litellm-provider",
+      "role": "OpenCode v2 插件",
+      "url": "https://github.com/rpchen/opencode-litellm-provider.git",
+      "branch": "main",
+      "install": ["npm", "ci"],
+      "verify": [
+        ["npm", "run", "verify:dist"],
+        ["npm", "run", "test:delivery"],
+        ["npm", "run", "typecheck"],
+        ["npm", "test"],
+        ["npm", "run", "test:tui-render"],
+        ["npm", "run", "test:distribution"],
+        ["npm", "run", "test:package"],
+        ["npm", "run", "validate:spec"]
+      ]
+    },
+    {
+      "name": "pi-litellm-provider",
+      "role": "Pi 扩展",
+      "url": "https://github.com/rpchen/pi-litellm-provider.git",
+      "branch": "main",
+      "install": ["npm", "ci"],
+      "verify": [
+        ["bun", "run", "verify:dist"],
+        ["bun", "run", "typecheck"],
+        ["bun", "test"],
+        ["bun", "run", "test:package"],
+        ["npm", "run", "validate:spec"],
+        ["npm", "run", "test:openspec-closure"],
+        ["npm", "run", "test:release-metadata"]
+      ]
+    }
+  ]
+}
