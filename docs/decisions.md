@@ -12,9 +12,9 @@
 | 总仓库职责 | 只承载跨仓库协调：工作区清单与脚本、跨仓库文档、AI 代理约定（`.agents/skills/`）；不含子项目代码、不发版、不维护 OpenSpec | 保持子仓库为唯一事实来源，避免出现两份 |
 | 治理约定 | 沿用子仓库的约定：功能分支 + PR + required CI；conventional commits；规格由**各子仓库自己的 OpenSpec** 管理（workspace 不维护）；简体中文文档；示例用 `sk-xxx` / `http://litellm.example:4000` | 与三个子仓库保持一致 |
 | 测试标准 | 共享测试标准以 `litellm-discovery-core/docs/testing-standard.md` 为权威 | 已在 core 与两个插件的 AGENTS.md 中约定 |
+| Workspace 远端与 bootstrap（2026-09-30） | workspace 总仓库发布到 GitHub public 仓库 [`rpchen/litellm-provider-workspace`](https://github.com/rpchen/litellm-provider-workspace)，默认分支 `main`；新机器用 `scripts/bootstrap.ps1` 按 `workspace.json` 恢复三仓库开发环境 | 仅凭 workspace 仓库即可恢复完整开发 workspace；bootstrap 只创建缺失子仓库，已有子仓库只检查不改动（origin 不匹配即 fail closed），不使用 submodule、不自动装依赖 |
 | 移除 workspace OpenSpec（2026-09-30） | workspace 总仓库删除 `openspec/` 目录与 OpenSpec 专用 skills；产品 specification 只存在于三个子仓库各自的 OpenSpec；跨仓库协作规则沉淀在 `AGENTS.md` / `docs/` / `.agents/skills/` | workspace 只负责跨仓库协作与开发基础设施，不承担产品 specification 职责 |
 
 ## 待办（需要另行确认后再做）
 
-- 在 GitHub 上创建 `rpchen/litellm-provider` 远端并推送（尚未创建）。
 - 子仓库文档中若有"物理嵌套在 LiteLLM 部署仓库目录下"之类的旧描述（如 `pi-litellm-provider/AGENTS.md`、`openspec/config.yaml`），应在各自仓库通过 PR 更新；这不在总仓库迁移范围内。

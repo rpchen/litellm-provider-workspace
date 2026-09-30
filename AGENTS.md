@@ -69,6 +69,7 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 - 不自动 `reset`、不自动 `clean`、不自动 `stash`；
 - 不覆盖用户未提交的修改；发现脏工作区只记录状态，不做清理、stash、reset 或提交；
 - 不让 workspace repo 管理子 repo 内容（不 submodule、不 monorepo、不把子仓库文件提交进总仓库）；
+- `scripts/bootstrap.ps1` 只创建缺失的子仓库并检查开发前提；对已存在的子仓库不得破坏性修改（不 reset / clean / stash / checkout / 覆盖 / 改 remote），origin 不匹配即 fail closed；
 - 跨仓库任务必须分别遵守每个受影响仓库自己的完成标准，**一个仓库完成不代表跨仓库 change 整体完成**。
 
 ## 目录结构
@@ -76,7 +77,7 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 | 路径 | 用途 |
 |---|---|
 | `workspace.json` | 工作区清单：子仓库 URL、分支、安装命令与提交前校验命令（与各子仓库 AGENTS.md 对齐） |
-| `scripts/` | 跨仓库脚本：`workspace.mjs` 提供 clone / status / fetch / install / verify / exec；`status.ps1` 提供只读状态快照 |
+| `scripts/` | 跨仓库脚本：`bootstrap.ps1` 在新机器创建缺失子仓库并检查工具前提；`workspace.mjs` 提供 clone / status / fetch / install / verify / exec；`status.ps1` 提供只读状态快照 |
 | `docs/` | 跨仓库文档：`docs/decisions.md` 记录用户确认的决策（工作前必读）；`docs/architecture.md` 说明三仓库总体架构 |
 | `.agents/skills/` | 项目级 portable skills 的**唯一真源**（agent-neutral）：workspace 跨仓库协作与治理的工作流 skills。不要创建或使用 `.codex/`、`.pi/`、`.opencode/`、`.claude/` 等目录承载 workspace 的项目规范或 skills 副本 |
 | `.github/` | 总仓库的 PR 模板 |

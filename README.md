@@ -26,14 +26,22 @@
 
 **跨仓库的工作从 workspace 根目录开始规划**（先读根 `AGENTS.md` 的依赖方向）；**单仓库的工作直接进入对应子仓库进行**，遵守它自己的 `AGENTS.md` / `CONTRIBUTING.md`。
 
-### 第一次使用
+### 第一次使用（Bootstrap）
 
-```sh
-git clone https://github.com/rpchen/litellm-provider.git
+```powershell
+git clone https://github.com/rpchen/litellm-provider-workspace.git litellm-provider
 cd litellm-provider
-node scripts/workspace.mjs clone     # 把三个子项目 clone 到当前目录
-node scripts/workspace.mjs install   # 分别安装依赖
+.\scripts\bootstrap.ps1
 ```
+
+`bootstrap.ps1` 会按 `workspace.json` 把三个产品仓库 clone 成当前目录下的子目录（workspace 不使用 submodule，子目录也不会被提交进本仓库）：
+
+- 已存在的子仓库只做检查，不会被覆盖或重新 clone；
+- 有未提交修改的子仓库只报告 dirty，不会 reset / clean / stash；
+- origin 指向其他仓库时直接 fail closed，不改 remote、不删目录；
+- 只报告开发工具前提（Node / npm / Bun / gh / openspec），不自动安装任何软件。
+
+依赖安装与提交前校验仍按各子仓库约定执行（也可用 `node scripts/workspace.mjs install` / `verify`）。
 
 ### 日常命令
 
