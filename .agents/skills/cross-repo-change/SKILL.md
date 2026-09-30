@@ -7,7 +7,7 @@ description: Advance a change that spans litellm-discovery-core and the Pi/OpenC
 
 一个需求需要同时改动 `litellm-discovery-core` 与/或两个 adapter 时，按本流程推进。**一个仓库完成，不代表跨仓库 change 已整体完成**；每个仓库必须分别满足它自己 `AGENTS.md` 的完成标准。
 
-前置：先运行 `.agents/skills/workspace-baseline` 建立事实基线，并确认本次 change 在正确的 openspec 立案（只影响一个仓库 → 该仓库自己的 `openspec/`；影响多仓库契约/流程 → workspace 总仓库 `openspec/`，并在各受影响仓库的变更中引用）。
+前置：先运行 `.agents/skills/workspace-baseline` 建立事实基线。**workspace 总仓库不维护 OpenSpec**：change 一律在各子仓库自己的 `openspec/` 立案——只影响一个仓库 → 该仓库自己的 `openspec/`；影响多仓库契约/流程 → 每个受影响子仓库各自立案并在 change 中互相引用；跨仓库协作规则同步更新本文件 / 根 `AGENTS.md` / `docs/`。
 
 ## 推进步骤
 

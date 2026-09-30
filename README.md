@@ -51,6 +51,6 @@ node scripts/workspace.mjs exec -- git log -1 --oneline    # 在三个项目里�
 
 1. 先看 [AGENTS.md](AGENTS.md) 的"依赖方向"：通常先改 core，合入 `main` 后再改两个插件。
 2. 每个受影响的项目各开一个功能分支、各自提 PR，在各自仓库里提交。
-3. 跨项目的方案讨论、共享规则的变更，放在本仓库的 `openspec/` 里立提案。
+3. 跨项目的方案讨论、共享规则的变更，沉淀在本仓库的 `AGENTS.md` / `docs/` / `.agents/skills/`；产品 specification 不在本仓库定义，只存在于各子仓库自己的 OpenSpec。
 
 更多约定见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [docs/decisions.md](docs/decisions.md)。

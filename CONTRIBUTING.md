@@ -3,7 +3,7 @@
 ## 提交到哪里
 
 - 子项目（core / OpenCode 插件 / Pi 扩展）的代码、测试、文档改动，**提交到对应子仓库**，按它自己的 `CONTRIBUTING.md` 走分支 + PR + required `CI`。
-- 本仓库只接受跨项目协调内容：`workspace.json`、`scripts/`、`docs/`、`openspec/`、`AGENTS.md`、`README.md` 等。
+- 本仓库只接受跨项目协调内容：`workspace.json`、`scripts/`、`docs/`、`.agents/skills/`、`AGENTS.md`、`README.md` 等。
 
 ## 分支与合并
 
@@ -25,8 +25,10 @@ node scripts/workspace.mjs verify    # 全部子仓库的提交前校验
 
 ## 规格变更
 
+- workspace 总仓库不维护 OpenSpec，不承担产品 specification 职责；产品 spec 只存在于三个子仓库各自的 `openspec/`。
 - 只影响单个仓库的变更：在该仓库的 `openspec/changes/` 立提案。
-- 影响多个仓库的契约或流程：在本仓库的 `openspec/changes/` 立提案（proposal / design / specs / tasks），实施并验证后用 OpenSpec CLI archive，再执行 `openspec validate --all --strict --no-interactive`；不得手工移动目录代替 archive。
+- 影响多个仓库的契约或流程：在每个受影响子仓库各自的 `openspec/changes/` 立提案并互相引用；跨仓库的协作规则与本仓库治理约定同步沉淀在本仓库 `AGENTS.md` / `docs/` / `.agents/skills/`。
+- 子仓库的 change 实施并验证后用 OpenSpec CLI archive，再执行 `openspec validate --all --strict --no-interactive`（在对应子仓库内）；不得手工移动目录代替 archive。
 
 ## 测试完成标准
 

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是 AI 编码代理在本工作区（`litellm-provider` 总项目）工作时必须遵守的约定。跨仓库变更流程由 `openspec/config.yaml` 管理。
+本文件是 AI 编码代理在本工作区（`litellm-provider` 总项目）工作时必须遵守的约定。跨仓库协作与治理的工作流见 `.agents/skills/`（`workspace-baseline` / `cross-repo-change` / `project-retrospective`）。
 
 ## 这是什么
 
@@ -59,7 +59,7 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 1. 各层级 `AGENTS.md`（本文件 + 子仓库各自的 `AGENTS.md`）；
 2. `docs/decisions.md` / ADR（总仓库与各子仓库各自的决策记录）；
 3. Core `docs/testing-standard.md`；
-4. canonical `openspec/specs/`；
+4. 各子仓库 canonical `openspec/specs/`；
 5. Git / GitHub / provenance / Release 的当前事实（remote、branch、HEAD、tag、`dist/core-provenance.json` 等）。
 
 聊天历史、AI memory、上一会话的结论**不能代替当前事实核查**；开工前按 `.agents/skills/workspace-baseline` 重建事实基线。
@@ -78,8 +78,7 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 | `workspace.json` | 工作区清单：子仓库 URL、分支、安装命令与提交前校验命令（与各子仓库 AGENTS.md 对齐） |
 | `scripts/` | 跨仓库脚本：`workspace.mjs` 提供 clone / status / fetch / install / verify / exec；`status.ps1` 提供只读状态快照 |
 | `docs/` | 跨仓库文档：`docs/decisions.md` 记录用户确认的决策（工作前必读）；`docs/architecture.md` 说明三仓库总体架构 |
-| `openspec/` | **跨仓库**变更提案与规格；单仓库内的变更放在该仓库自己的 `openspec/` |
-| `.agents/skills/` | 项目级 portable skills 的**唯一真源**（agent-neutral）：OpenSpec skills 与 workspace 工作流 skills 都在这里。不要创建或使用 `.codex/`、`.pi/`、`.opencode/`、`.claude/` 等目录承载 workspace 的项目规范或 skills 副本 |
+| `.agents/skills/` | 项目级 portable skills 的**唯一真源**（agent-neutral）：workspace 跨仓库协作与治理的工作流 skills。不要创建或使用 `.codex/`、`.pi/`、`.opencode/`、`.claude/` 等目录承载 workspace 的项目规范或 skills 副本 |
 | `.github/` | 总仓库的 PR 模板 |
 | `.tmp/` | 临时草稿区（gitignore，可随时整体清空）；需保留的产物必须移到正式目录 |
 
@@ -87,9 +86,9 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 
 1. **临时文件**一律放 `.tmp/`；需要保留的脚本放 `scripts/`，文档放 `docs/`。
 2. **agent-neutral**：workspace 的项目规范与 skills 只在根 `AGENTS.md`、`.agents/skills/`、`docs/`、`scripts/` 维护，不向 `.codex/`、`.pi/`、`.opencode/`、`.claude/` 复制；子仓库内部若有自己的 skills 约定，以子仓库为准。
-3. **openspec 分工**：只影响一个仓库的变更，在该仓库的 `openspec/` 立提案；同时改变多个仓库的契约或流程（如 core 公共 API 变化、跨仓库发版顺序、共享测试标准），在总仓库 `openspec/` 立提案，并在受影响仓库各自的变更中引用它。
+3. **OpenSpec 分工**：workspace 总仓库**不维护 OpenSpec**（产品 specification 只存在于三个子仓库各自的 `openspec/`）。只影响一个仓库的变更，在该仓库自己的 `openspec/` 立提案；同时改变多个仓库契约或流程的变更（如 core 公共 API 变化、跨仓库发版顺序、共享测试标准），在每个受影响子仓库各自的 `openspec/` 立提案并互相引用，跨仓库的协作规则同步沉淀在本文件、`docs/` 与 `.agents/skills/`。
 4. **新增子仓库**：在 `workspace.json` 登记、在 `.gitignore` 加 `/<name>/`、在本文件与 README 的表格补一行，再 clone。
-5. **提交**：conventional commits（`feat:` / `fix:` / `chore:` / `docs:`）；openspec 在途变更随实施一起提交，完成后 archive。
+5. **提交**：conventional commits（`feat:` / `fix:` / `chore:` / `docs:`）；子仓库的 openspec 在途变更在该子仓库内随实施一起提交，完成后 archive。
 6. **发版**：总仓库本身不发版、不打 tag、不发布 npm。各子仓库发版按其自己的 AGENTS.md / CONTRIBUTING.md 执行，打 tag 前向用户确认。
 7. **不自行合并 PR、打 tag、创建 Release、推送到 main**，除非用户明确要求。
 8. **知识沉淀**：长期有效的经验必须写进正确的权威文件（子仓库的实现/测试经验写子仓库，跨仓库经验写总仓库 `docs/` 与 skills），不得依赖 AI 会话记忆。
