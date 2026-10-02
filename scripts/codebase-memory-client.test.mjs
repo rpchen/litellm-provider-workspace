@@ -40,7 +40,7 @@ test('[CBM-LOCAL-IDENTITY] root and subdirectory sessions use nearest opted-in c
     assert.equal(indexArgs[indexArgs.indexOf('--repo-path')+1],realpathSync(child));
   } finally {
     if (!dir.startsWith(base+path.sep)) throw new Error('Unsafe test cleanup');
-    rmSync(dir,{recursive:true,force:true});
+    rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});
   }
 });
 
@@ -61,7 +61,7 @@ function selectedFixture() {
   }
   const root = init(path.join(dir, 'workspace'), 'workspace'), child = init(path.join(root, 'child'), 'child');
   writeFileSync(path.join(root, 'workspace.json'), JSON.stringify({ repos: [{ name: 'child' }] }));
-  return { root, child, cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true }); } };
+  return { root, child, cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } };
 }
 for (const corruption of ['malformed JSON', 'invalid schema', 'wrong project']) {
   test(`[CBM-SELECTED-METADATA] ${corruption} in a selected child blocks the whole workspace`, async () => {
