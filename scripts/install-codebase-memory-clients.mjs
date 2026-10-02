@@ -83,6 +83,23 @@ update(openConfig, text => {
 });
 const openBinary = process.platform === 'win32' ? path.join(process.env.APPDATA, 'npm/node_modules/@opencode/cli/bin/opencode.exe') : 'opencode';
 run(openBinary, ['mcp', 'add', '--global', 'codebase-memory-mcp', '--', node, launcher]);
+update(openConfig, text => {
+  // The native CLI just wrote this owned server object as JSON. Preserve the surrounding JSONC.
+  const match = /"codebase-memory-mcp"\s*:\s*\{/.exec(text);
+  if (!match) throw new Error('OpenCode did not persist its MCP server configuration');
+  const start = match.index + match[0].length - 1;
+  let depth = 0, quoted = false, escaped = false, end = start;
+  for (; end < text.length; end++) {
+    const char = text[end];
+    if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; }
+    else if (char === '"') quoted = true;
+    else if (char === '{') depth++;
+    else if (char === '}' && --depth === 0) break;
+  }
+  const server = JSON.parse(text.slice(start, end + 1));
+  server.timeout = { ...server.timeout, startup: 120000, request: 120000 };
+  return text.slice(0, start) + JSON.stringify(server, null, 2) + text.slice(end + 1);
+});
 instruct(path.join(openDir, 'AGENTS.md'));
 const piDir = process.env.PI_CODING_AGENT_DIR ?? path.join(profile, '.pi/agent');
 instruct(path.join(piDir, 'AGENTS.md'));
