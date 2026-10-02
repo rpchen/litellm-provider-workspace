@@ -6,6 +6,8 @@
 
 MCP 配置使工具进入客户端的工具列表，使用约定使代理知道何时调用。两者都需要配置。模型是否遵循约定仍须从实际工具调用判断，不能把配置存在等同于每次任务必然调用。
 
+工具的 project 标识以当前 `artifact.json` 与 `index_status` 为准，不硬编码上一会话的名称。CBM 可能按本机路径建立项目别名；Release 的源码身份由 GitHub 仓库、tag 和完整 commit SHA 验证，manifest 的 project 必须与发布图谱 metadata 一致，不要求跨机器沿用本地缓存别名。
+
 ## 新机器接入
 
 1. 安装 Node.js、Git、GitHub CLI，并显式安装 `npm install -g codebase-memory-mcp@0.11.0`。发布附件下载通过 gh 使用当前用户已有认证；无需新增 API Key。

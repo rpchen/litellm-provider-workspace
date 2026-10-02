@@ -14,7 +14,7 @@ const backupRoot = mkdtempSync(path.join((mkdirSync(path.join(codexRoot, 'backup
 const instructions = `<!-- CBM_START -->
 ## codebase-memory
 Only use the graph in the nearest Git repository when its root contains .codebase-memory/artifact.json. Never automatically index a new repository.
-At session start or after compaction, discover codebase-memory tools, call list_projects/index_status, and use search_graph, query_graph, trace_path, get_code_snippet, get_architecture before text search for structural code questions. Confirm project/root and coverage; use source reads for stale, skipped or missing coverage. If MCP tool discovery is deferred, search for codebase-memory tools first. Pi exposes these tools directly through its extension.
+At session start or after compaction, read the marker's artifact.json project identifier, discover codebase-memory tools, call list_projects/index_status, and use search_graph, query_graph, trace_path, get_code_snippet, get_architecture before text search for structural code questions. Confirm project/root and coverage; use source reads for stale, skipped or missing coverage. If MCP tool discovery is deferred, search for codebase-memory tools first. Pi exposes these tools directly through its extension.
 Read repository AGENTS.md instructions before implementation. Graph evidence does not replace current Git/source facts.
 <!-- CBM_END -->`;
 function update(file, transform) {
