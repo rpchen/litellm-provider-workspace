@@ -21,8 +21,12 @@ export async function prepareTask(cwd, options = {}) {
   const roots = workingRoots(cwd);
   if (!roots.length) return { status: 'unselected', repositories: [] };
   const repositories = [];
-  const deadline = Date.now() + (options.waitMs ?? 0);
-  for (const root of roots) repositories.push(await (options.prepareRepository ?? prepareMain)(root, { ...options, waitMs: Math.max(0, deadline - Date.now()) }));
+  const deadline = (options.waitMs ?? 0) > 0 ? Date.now() + options.waitMs : undefined;
+  for (const root of roots) {
+    if (deadline && Date.now() >= deadline) throw new Error('Workspace index preparation timed out');
+    repositories.push(await (options.prepareRepository ?? prepareMain)(root, { ...options, waitMs: deadline ? Math.max(1, deadline - Date.now()) : 0 }));
+    if (deadline && Date.now() >= deadline) throw new Error('Workspace index preparation timed out');
+  }
   if (repositories.length !== roots.length || roots.some(root => repositories.filter(repo => path.resolve(repo.root) === path.resolve(root)).length !== 1)) throw new Error('Not all expected repositories have a successful preparation receipt');
   for (const result of repositories) {
     if (result.status === 'ready') {

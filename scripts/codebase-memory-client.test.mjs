@@ -92,6 +92,18 @@ test('[CBM-MISSING-METADATA] selected clone without artifact is still an expecte
     await assert.rejects(prepareTask(f.root, { prepareRepository: async root => { if (root === f.child) throw new Error('Missing selected index cannot be restored'); return { status: 'working', root }; } }), /cannot be restored/);
   } finally { f.cleanup(); }
 });
+test('[CBM-WORKSPACE-BUDGET] an expired positive budget cannot become an unlimited immediate attempt for another root', async () => {
+  const f = selectedFixture();
+  try {
+    let called = 0;
+    await assert.rejects(prepareTask(f.root, { waitMs: 10, prepareRepository: async root => {
+      called++; await new Promise(resolve => setTimeout(resolve, 40));
+      return { status: 'working', root };
+    } }), /timed out/);
+    assert.equal(called, 1); assert.equal(run('git', ['branch', '--show-current'], { cwd: f.child }), 'main');
+  } finally { f.cleanup(); }
+});
+
 test('[CBM-ALL-RECEIPTS] missing, duplicate and forged child receipts cannot declare overall ready', async () => {
   const f = selectedFixture();
   try {
