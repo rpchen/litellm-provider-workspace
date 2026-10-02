@@ -82,8 +82,25 @@ export function workingRoots(cwd) {
 function canonicalRoot(root) { try { return path.resolve(realpathSync(root)); } catch { return path.resolve(root); } }
 function nativeProject(root) { return root.replaceAll('\\', '/').replace(/[^\w.-]/g, '-').replace(/-+/g, '-'); }
 export class ReadinessGate {
-  constructor(resolve, defaultRoot) { this.resolve = resolve; this.defaultRoot = defaultRoot; this.tools = new Map(); this.failures = new Map(); this.identities = new Map(); }
+  constructor(resolve, defaultRoot) { this.resolve = resolve; this.defaultRoot = defaultRoot; this.tools = new Map(); this.failures = new Map(); this.identities = new Map(); this.pending = new Map(); }
   register(tools) { for (const tool of tools) this.tools.set(tool.name, tool.inputSchema); }
+  track(roots) {
+    // Queries must not race an in-flight preparation of the same root: they
+    // wait for its outcome instead of passing on a not-yet-verified state.
+    const wake = [];
+    for (const value of roots) {
+      const root = canonicalRoot(value);
+      let entry = this.pending.get(root);
+      if (!entry) { let settle; const promise = new Promise(resolve => settle = resolve); entry = { count: 0, promise, settle }; this.pending.set(root, entry); }
+      entry.count++;
+      wake.push(() => { if (--entry.count === 0) { this.pending.delete(root); entry.settle(); } });
+    }
+    return () => { for (const release of wake) release(); };
+  }
+  awaitSettled(root) {
+    const entry = this.pending.get(canonicalRoot(root));
+    return entry ? entry.promise : Promise.resolve();
+  }
   fail(roots, message) {
     for (const value of roots) {
       const root = canonicalRoot(value); this.failures.set(root, message);
@@ -100,7 +117,8 @@ export class ReadinessGate {
     }
   }
   async check(name, args = {}) {
-    if (!this.failures.size || ['list_projects', 'index_status'].includes(name)) return;
+    if (['list_projects', 'index_status'].includes(name)) return;
+    if (!this.failures.size && !this.pending.size) return;
     const schema = this.tools.get(name);
     if (!schema) throw new Error('Tool schema has not been discovered; readiness cannot be established');
     const keys = Object.keys(schema.properties ?? {}).filter(key => key === 'project' || key.endsWith('_project'));
@@ -112,10 +130,17 @@ export class ReadinessGate {
       const value = args[key];
       if (value === undefined && keys.some(other => other !== key && args[other] !== undefined)) continue;
       let identity;
-      try { identity = value ? await this.resolve(value) : { root: this.defaultRoot }; }
-      catch { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }
-      if (typeof identity === 'string') identity = { root: identity };
+      const resolveIdentity = () => this.resolve(value).then(result => typeof result === 'string' ? { root: result } : result);
+      try { identity = value ? await resolveIdentity() : { root: this.defaultRoot }; }
+      catch (error) {
+        // A preparation still in flight may not have registered this project
+        // yet. Await every pending outcome, then retry resolution once.
+        if (this.pending.size) { await Promise.all([...this.pending.values()].map(entry => entry.promise)); identity = value ? await resolveIdentity().catch(() => { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }) : { root: this.defaultRoot }; }
+        else throw new Error('Project identity cannot be resolved while repository preparation has failed');
+      }
       if (!identity?.root) throw new Error('Project identity cannot be resolved while repository preparation has failed');
+      await this.awaitSettled(identity.root);
+      if (!this.failures.size) continue;
       const matched = [...this.identities].find(([, aliases]) => [value, identity.project].some(project =>
         typeof project === 'string' && [...aliases].some(alias => project === alias ||
           (project.startsWith(`${alias}-main-`) && /^[a-f0-9]{40}$/.test(project.slice(alias.length + 6))))));
@@ -160,7 +185,13 @@ export async function main(args = process.argv.slice(2)) {
     let roots;
     try { roots = workingRoots(cwd); }
     catch (error) { gate.fail(error.expectedRoots ?? [gitRoot(cwd) ?? sessionRoot], error.message); return error.expectedRoots ?? []; }
-    await Promise.all(roots.filter(root => !prepared.has(root)).map(root => {
+    // Track the in-flight startup preparation per root: queries targeting
+    // these roots wait for the outcome instead of racing an unverified state.
+    // A root whose last attempt failed is retried when the host re-reports
+    // it (for example after fixing metadata): recovery must reopen the gate.
+    const starting = roots.filter(root => !prepared.has(root) || gate.failures.has(canonicalRoot(root)));
+    const settled = gate.track(starting);
+    const running = Promise.all(starting.map(root => {
       prepared.add(root);
       return new Promise(resolve => {
         const worker = spawn(process.execPath, [fileURLToPath(import.meta.url), 'prepare-one', root], { cwd: root, windowsHide: true, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -168,12 +199,14 @@ export async function main(args = process.argv.slice(2)) {
         const timeout = setTimeout(() => worker.kill(), 50000);
         const done = code => {
           clearTimeout(timeout); workers.delete(worker);
-          if (selection(root)) { if (code === 0) gate.success([{ root, status: 'working' }]); else gate.fail([root], 'Repository preparation failed; call prepare_codebase_task before new work'); }
+          if (code === 0) gate.success([{ root, status: selection(root) ? 'working' : 'ready' }]);
+          else if (selection(root)) gate.fail([root], 'Repository preparation failed; call prepare_codebase_task before new work');
           resolve();
         };
         worker.on('error', () => done(1)); worker.on('exit', done);
       });
-    }));
+    })).then(() => settled());
+    if (args[0] === 'prepare') await running;
     return roots;
   }
   if (args[0] === 'prepare-one') { await prepareOne(args[1] ?? process.cwd()); return; }
@@ -187,8 +220,12 @@ export async function main(args = process.argv.slice(2)) {
     }));
   }
   if (args[0] !== 'hook-augment') {
-    const roots = await prepare(sessionRoot);
-    if (!args.length) await observe(roots);
+    // Never block the MCP handshake on preparation: a client connection
+    // window is far shorter than a full four-repository preparation. The
+    // daemon starts immediately; the gate keeps queries waiting until the
+    // same preparation outcome (success or explicit failure) has settled.
+    const background = prepare(sessionRoot).then(async roots => { if (!args.length) await observe(roots); });
+    if (args.length) await background;
   }
   child = spawn(binary, args, { cwd: sessionRoot, windowsHide: true, stdio: ['pipe', args.length ? 'inherit' : 'pipe', 'inherit'] });
   child.on('error', error => { console.error(error.message); process.exitCode = 1; cleanup(); });
@@ -225,37 +262,47 @@ export async function main(args = process.argv.slice(2)) {
         pending = pending.then(async () => {
           let forwarded = line;
           try {
-            const message = normalizeRoots(JSON.parse(line));
-            if (message.method === 'tools/list') toolLists.add(message.id);
-            if (message.method === 'tools/call' && TASK_TOOLS.some(tool => tool.name === message.params?.name)) {
+            const message = JSON.parse(line);
+            // Protocol parsing succeeded. Roots normalization and repository
+            // metadata validation are business failures, not protocol errors:
+            // they must gate the reported root instead of being forwarded for
+            // the native daemon, which would happily serve its own database.
+            let handled = message;
+            try { handled = normalizeRoots(message); }
+            catch (error) {
+              gate.fail(error.expectedRoots ?? [sessionRoot], error.message);
+              return;
+            }
+            if (handled.method === 'tools/list') toolLists.add(handled.id);
+            if (handled.method === 'tools/call' && TASK_TOOLS.some(tool => tool.name === handled.params?.name)) {
               try {
-                const args = message.params.arguments ?? {};
+                const args = handled.params.arguments ?? {};
                 if (typeof args.cwd !== 'string' || !path.isAbsolute(args.cwd) || !Number.isInteger(args.wait_ms ?? 60000) || (args.wait_ms ?? 60000) < 0 || (args.wait_ms ?? 60000) > 120000 || !['new', 'resume'].includes(args.mode ?? 'new')) throw new Error('Invalid task preparation arguments');
-                const result = await prepareTask(args.cwd, { mode: message.params.name === 'finish_codebase_task' ? 'finish' : args.mode ?? 'new', waitMs: args.wait_ms ?? 60000 });
+                const result = await prepareTask(args.cwd, { mode: handled.params.name === 'finish_codebase_task' ? 'finish' : args.mode ?? 'new', waitMs: args.wait_ms ?? 60000 });
                 gate.success(result.repositories);
                 await observe(workingRoots(args.cwd));
-                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: false } }) + '\n');
+                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: handled.id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: false } }) + '\n');
               } catch (error) {
                 let roots = error.expectedRoots;
-                if (!roots) { try { roots = workingRoots(message.params.arguments?.cwd ?? sessionRoot); } catch (failure) { roots = failure.expectedRoots; } }
+                if (!roots) { try { roots = workingRoots(handled.params.arguments?.cwd ?? sessionRoot); } catch (failure) { roots = failure.expectedRoots; } }
                 gate.fail(roots ?? [sessionRoot], error.message);
-                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n');
+                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: handled.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n');
               }
               return;
             }
-            if (message.method === 'tools/call') {
+            if (handled.method === 'tools/call') {
               try {
-                if (!gate.tools.has(message.params.name) && gate.failures.size) {
+                if (!gate.tools.has(handled.params.name) && gate.failures.size) {
                   resolver ??= startSession(sessionRoot, { command: binary, args: [], timeout: 15000 });
                   gate.register((await (await resolver).request('tools/list')).tools);
                 }
-                await gate.check(message.params.name, message.params.arguments);
+                await gate.check(handled.params.name, handled.params.arguments);
               } catch (error) {
-                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n'); return;
+                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: handled.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n'); return;
               }
             }
-            for (const root of message.result?.roots ?? []) if (root.uri?.startsWith('file:')) await observe(await prepare(fileURLToPath(root.uri)));
-            forwarded = JSON.stringify(message);
+            for (const root of handled.result?.roots ?? []) if (root.uri?.startsWith('file:')) await observe(await prepare(fileURLToPath(root.uri)));
+            forwarded = JSON.stringify(handled);
           } catch { /* Forward malformed protocol messages for native handling. */ }
           if (!child.stdin.destroyed) child.stdin.write(forwarded + '\n');
         });

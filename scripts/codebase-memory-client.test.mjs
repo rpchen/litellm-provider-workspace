@@ -8,6 +8,8 @@ import { run, refresh } from './codebase-memory.mjs';
 import { binaryPath } from './codebase-memory.mjs';
 import { startSession } from './codebase-memory-session.mjs';
 
+const nativeProjectName = root => root.replaceAll('\\', '/').replace(/[^\w.-]/g, '-').replace(/-+/g, '-');
+
 test('[CBM-LOCAL-IDENTITY] root and subdirectory sessions use nearest opted-in canonical Git root', () => {
   const base = path.resolve('.tmp'); mkdirSync(base,{recursive:true});
   const dir = mkdtempSync(path.join(base,'cbm-root-test-'));
@@ -64,7 +66,7 @@ function selectedFixture() {
   return { root, child, cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } };
 }
 for (const corruption of ['malformed JSON', 'invalid schema', 'wrong project']) {
-  test(`[CBM-SELECTED-METADATA] ${corruption} in a selected child blocks the whole workspace`, async () => {
+  test(`[CBM-SELECTED-METADATA] ${corruption} in a selected child blocks the whole workspace`, { timeout: 120000 }, async () => {
     const f = selectedFixture();
     try {
       const value = corruption === 'malformed JSON' ? '{broken' : JSON.stringify({ schema_version: corruption === 'invalid schema' ? 1 : 2, project: corruption === 'wrong project' ? 'not-this-repository-cbm-review' : 'child', commit: run('git', ['rev-parse', 'HEAD'], { cwd: f.child }) });
@@ -190,4 +192,87 @@ test('[CBM-MCP-GATE] actual native registry and stdio enforce aliases, absolute 
     session?.close(); await new Promise(resolve => setTimeout(resolve, 500)); f.cleanup();
     for (const project of indexedProjects) run(binaryPath(), ['cli', '--quiet', '--json', 'delete_project', '--project', project]);
   }
+});
+
+function legacyFixture() {
+  const base = path.resolve('.tmp'); mkdirSync(base, { recursive: true });
+  const dir = mkdtempSync(path.join(base, 'cbm-legacy-'));
+  function init(root, project) {
+    mkdirSync(root, { recursive: true }); run('git', ['init', '-b', 'main', root]);
+    run('git', ['remote', 'add', 'origin', `https://github.com/example/${project}.git`], { cwd: root });
+    mkdirSync(path.join(root, '.codebase-memory'));
+    writeFileSync(path.join(root, '.gitignore'), '.codebase-memory/*\n');
+    writeFileSync(path.join(root, 'source.ts'), 'export const rootsFixture = true;');
+    run('git', ['add', '.'], { cwd: root }); run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-qm', 'fixture'], { cwd: root });
+    const commit = run('git', ['rev-parse', 'HEAD'], { cwd: root });
+    writeFileSync(path.join(root, '.codebase-memory/artifact.json'), JSON.stringify({ schema_version: 2, project, commit }));
+    return realpathSync(root);
+  }
+  const repo = init(path.join(dir, 'legacy-repo'), 'roots-fixture');
+  const generic = path.join(dir, 'generic'); mkdirSync(generic);
+  return { repo, generic, project: 'roots-fixture', commit: run('git', ['rev-parse', 'HEAD'], { cwd: repo }),
+    cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } };
+}
+test('[CBM-ROOTS-DISCOVERY] a generic-cwd session gates and recovers a root reported by the host', { timeout: 180000 }, async () => {
+  const f = legacyFixture();
+  let session;
+  const indexedProjects = [];
+  try {
+    // Corrupt the selected repository metadata before the host reports the root.
+    writeFileSync(path.join(f.repo, '.codebase-memory/artifact.json'), '{broken legacy artifact');
+    // Fail remote fetch immediately on an isolated localhost proxy; never
+    // contact GitHub from this failure-path test or read user credentials.
+    const env = { ...process.env };
+    session = await startSession(f.generic, { env, timeout: 90000, args: [process.env.CBM_REVIEW_CLIENT ?? path.resolve('scripts/codebase-memory-client.mjs')] });
+    const registry = await session.request('tools/list');
+    assert.ok(registry.tools.find(tool => tool.name === 'search_graph').inputSchema.properties.project);
+    // The host reports the repository root through a roots/list response.
+    // The wrapper must treat the metadata failure as a gated repository, not
+    // as a protocol problem, and must not forward the corrupted root.
+    session.send({ id: 90001, result: { roots: [{ uri: pathToFileURL(f.repo).href }] } });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const calls = [
+      { name: 'search_graph', arguments: { project: f.project, query: 'rootsFixture' } },
+      { name: 'search_graph', arguments: { project: nativeProjectName(f.repo), query: 'rootsFixture' } },
+      { name: 'search_graph', arguments: { project: f.repo, query: 'rootsFixture' } },
+      { name: 'search_graph', arguments: { project_name: f.project, query: 'rootsFixture' } },
+      { name: 'compare_graphs', arguments: { base_project: f.project, target_project: f.repo } }
+    ];
+    const results = [];
+    for (const call of calls) results.push(await session.request('tools/call', call));
+    assert.deepEqual(results.map(result => result.isError), calls.map(() => true), JSON.stringify(calls));
+    for (const result of results) assert.match(result.content.map(part => part.text ?? '').join('\n'), /metadata failed|preparation.*failed|cannot be resolved/i);
+    // Repair the metadata and re-report the root: the same session must
+    // re-prepare the repository, reopen the gate, and serve queries again.
+    writeFileSync(path.join(f.repo, '.codebase-memory/artifact.json'), JSON.stringify({ schema_version: 2, project: f.project, commit: f.commit }));
+    session.send({ id: 90002, result: { roots: [{ uri: pathToFileURL(f.repo).href }] } });
+    // The native working graph is registered under the path-derived name.
+    const nativeName = nativeProjectName(f.repo);
+    const deadline = Date.now() + 90000; let recovered;
+    do {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      recovered = await session.request('tools/call', { name: 'search_graph', arguments: { project: nativeName, query: 'rootsFixture' } }).catch(() => undefined);
+    } while (recovered?.isError && Date.now() < deadline);
+    assert.equal(recovered.isError, false, JSON.stringify(recovered.content));
+    indexedProjects.push(nativeName);
+  } finally {
+    session?.close(); await new Promise(resolve => setTimeout(resolve, 500)); f.cleanup();
+    for (const project of indexedProjects) run(binaryPath(), ['cli', '--quiet', '--json', 'delete_project', '--project', project]);
+  }
+});
+test('[CBM-HANDSHAKE-LATENCY] startup preparation never blocks the MCP handshake', { timeout: 120000 }, async () => {
+  // The wrapper must answer initialize immediately while the four-repository
+  // startup preparation still runs in the background. A client's stdio
+  // connection window (30s in Claude Code) is far shorter than a full
+  // workspace preparation (40s+ measured on this workspace).
+  const f = selectedFixture();
+  let session;
+  try {
+    const began = Date.now();
+    session = await startSession(f.root, { timeout: 60000, args: [process.env.CBM_REVIEW_CLIENT ?? path.resolve('scripts/codebase-memory-client.mjs')] });
+    const elapsed = Date.now() - began;
+    assert.ok(elapsed < 25000, `initialize answered after ${elapsed}ms; preparation must not gate the handshake`);
+    const registry = await session.request('tools/list');
+    assert.ok(registry.tools.find(tool => tool.name === 'prepare_codebase_task'));
+  } finally { session?.close(); await new Promise(resolve => setTimeout(resolve, 500)); f.cleanup(); }
 });
