@@ -5,6 +5,8 @@ export class McpSession {
   constructor(cwd, { command = process.execPath, args = [fileURLToPath(new URL('./codebase-memory-client.mjs', import.meta.url))], env = process.env, timeout = 120000 } = {}) {
     this.cwd = cwd; this.timeout = timeout; this.pending = new Map(); this.nextId = 0; this.buffer = ''; this.closed = false;
     this.child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    // Decode continuously across pipe reads, including partial UTF-8 characters.
+    this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', data => this.receive(data));
     this.child.stderr.on('data', () => {});
     this.child.on('error', error => this.fail(error));

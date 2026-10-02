@@ -45,6 +45,8 @@ GitHub 无法向关机或离线的电脑写文件。本地按用户确认的方�
 
 ## 验证入口
 
+持久 MCP stdout 使用流式 UTF-8 解码，再按 JSONL 分帧；不得把每个 Buffer 单独转换后拼接，否则跨字节边界的中文和 emoji 会静默损坏。`scripts/codebase-memory-session.test.mjs` 的 [CBM-UTF8] 使用实际 McpSession 和隔离子进程，覆盖完整响应、三字节中文与四字节 emoji 的每个内部字节边界，并比较 content 与 structuredContent 的原始内容。子进程等父进程读完首块再发送剩余字节，确保操作系统不会合并测试分块。该测试由 `npm test` 和 CI 执行。
+
 工作区 `npm test` 覆盖发布边界、降级状态、最近 Git 根、JSONC 首/中/末项及嵌套/注释、原始字节备份和 CLI 失败；`npm run test:mcp` 使用真实 0.11.0 验证新路径 clone、子目录启动和工作区独立子仓库修改源码后，保持同一 MCP 会话查询新符号。三个子仓库 CI 都执行 `npm run test:codebase-memory`，包括 structuredContent 和 content/text 两种原生降级返回。实际 Release 是否完成必须核对 workflow 和已发布附件；合并 PR、打 tag、创建 Release 仍须用户明确授权。
 
 接口依据：[codebase-memory 配置](https://github.com/DeusData/codebase-memory-mcp/blob/v0.11.0/docs/CONFIGURATION.md)、[Pi 官方桥接生成器](https://github.com/DeusData/codebase-memory-mcp/blob/v0.11.0/src/cli/client_adapter.c)、[OpenCode v2 MCP schema](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/config/mcp.ts)、[Codex MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。

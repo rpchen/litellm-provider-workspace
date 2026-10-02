@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test scripts/codebase-memory.test.mjs scripts/codebase-memory-client.test.mjs scripts/install-codebase-memory-clients.test.mjs",
+    "test": "node --test scripts/codebase-memory.test.mjs scripts/codebase-memory-client.test.mjs scripts/codebase-memory-session.test.mjs scripts/install-codebase-memory-clients.test.mjs",
     "test:mcp": "node --test scripts/codebase-memory-mcp.test.mjs"
   },
   "devDependencies": {
