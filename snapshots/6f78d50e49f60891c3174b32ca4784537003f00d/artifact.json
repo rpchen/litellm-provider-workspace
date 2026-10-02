@@ -1,0 +1,12 @@
+{
+    "schema_version": 2,
+    "commit": "6f78d50e49f60891c3174b32ca4784537003f00d",
+    "indexed_at": "2026-10-02T12:36:17Z",
+    "project": "rpchen-litellm-provider-workspace-main-6f78d50e49f60891c3174b32ca4784537003f00d",
+    "nodes": 247,
+    "edges": 549,
+    "original_size": 2359296,
+    "compressed_size": 230293,
+    "compression_level": 9,
+    "reconcile_basis": "git-clean-head"
+}
