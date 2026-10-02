@@ -18,11 +18,11 @@ jobs:
         with:
           node-version: 22.19.0
       - run: npm ci --ignore-scripts
+      - run: npm install -g codebase-memory-mcp@0.11.0
       - run: npm test
       - run: node --check scripts/codebase-memory-client.mjs
       - run: node --check scripts/install-codebase-memory-clients.mjs
       - run: node --check scripts/codebase-memory-session.mjs
-      - run: npm install -g codebase-memory-mcp@0.11.0
       - run: npm run test:mcp
       - name: Verify index generation for the reviewed source
         run: node scripts/codebase-memory-main.mjs build

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import { binaryPath, repository, run, sync, refresh } from './codebase-memory.mjs';
+import { toolData } from './codebase-memory.mjs';
 import { startSession } from './codebase-memory-session.mjs';
 import { selection, prepareMain } from './codebase-memory-main.mjs';
 
@@ -21,30 +22,100 @@ export async function prepareTask(cwd, options = {}) {
   if (!roots.length) return { status: 'unselected', repositories: [] };
   const repositories = [];
   const deadline = Date.now() + (options.waitMs ?? 0);
-  for (const root of roots) repositories.push(await prepareMain(root, { ...options, waitMs: Math.max(0, deadline - Date.now()) }));
+  for (const root of roots) repositories.push(await (options.prepareRepository ?? prepareMain)(root, { ...options, waitMs: Math.max(0, deadline - Date.now()) }));
+  if (repositories.length !== roots.length || roots.some(root => repositories.filter(repo => path.resolve(repo.root) === path.resolve(root)).length !== 1)) throw new Error('Not all expected repositories have a successful preparation receipt');
+  for (const result of repositories) {
+    if (result.status === 'ready') {
+      if (!existsSync(path.join(result.root, '.codebase-memory/artifact.json'))) throw new Error('Ready receipt is missing selected repository metadata');
+      const actual = optedRepository(result.root);
+      const marker = JSON.parse(readFileSync(path.join(result.root, '.codebase-memory/artifact.json'), 'utf8'));
+      if (!actual || marker.commit !== result.commit || marker.project !== result.project || result.commit !== run('git', ['rev-parse', 'HEAD'], { cwd: result.root }) || result.branch !== run('git', ['branch', '--show-current'], { cwd: result.root }) || result.index_commit !== result.commit) throw new Error('Preparation receipt differs from actual repository identity');
+    }
+  }
   return { status: repositories.every(repo => repo.status === 'ready') ? 'ready' : 'working', repositories };
 }
 
+function gitRoot(cwd) {
+  try { return realpathSync(run('git', ['rev-parse', '--show-toplevel'], { cwd })); }
+  catch (error) { if (/not a git repository|cannot change to/.test(error.message)) return undefined; throw error; }
+}
 export function optedRepository(cwd) {
-  try { const repo = repository(cwd); return { ...repo, root: realpathSync(repo.root) }; } catch { return undefined; }
+  const root = gitRoot(cwd);
+  if (!root || !['selection.json', 'artifact.json'].some(name => existsSync(path.join(root, '.codebase-memory', name)))) return undefined;
+  try {
+    const chosen = selection(root);
+    const repo = repository(root);
+    if (chosen && existsSync(path.join(root, '.codebase-memory/artifact.json'))) {
+      const artifact = JSON.parse(readFileSync(path.join(root, '.codebase-memory/artifact.json'), 'utf8'));
+      if (artifact.schema_version !== 2 || !/^[a-f0-9]{40}$/.test(artifact.commit ?? '')) throw new Error('Invalid selected repository metadata');
+      const native = root.replaceAll('\\', '/').replace(/[^\w.-]/g, '-').replace(/-+/g, '-');
+      if (![chosen.project, native].includes(artifact.project) && artifact.project !== `${chosen.project}-main-${artifact.commit}`) {
+        const status = toolData(JSON.parse(run(binaryPath(), ['cli', '--quiet', '--json', 'index_status', '--project', artifact.project, '--format', 'json'], { cwd: root })));
+        if (!status.root_path || path.resolve(status.root_path) !== path.resolve(root)) throw new Error('Selected repository metadata identity does not match its root');
+      }
+    }
+    return { ...repo, root };
+  } catch (error) { error.message = `Selected repository metadata failed at ${root}: ${error.message}`; error.expectedRoots = [root]; throw error; }
 }
 export function workingRoots(cwd) {
-  const repo = optedRepository(cwd);
-  if (!repo) return [];
-  const roots = [repo.root];
-  const manifest = path.join(repo.root, 'workspace.json');
+  const root = gitRoot(cwd);
+  if (!root) return [];
+  const candidates = [root];
+  const manifest = path.join(root, 'workspace.json');
   if (existsSync(manifest)) {
-    try {
       for (const entry of JSON.parse(readFileSync(manifest, 'utf8')).repos ?? []) {
         if (!/^[\w.-]+$/.test(entry.name) || entry.name === '.' || entry.name === '..') continue;
-        const candidate = path.join(repo.root, entry.name);
+        const candidate = path.join(root, entry.name);
         if (!existsSync(path.join(candidate, '.git'))) continue;
-        const child = optedRepository(candidate);
-        if (child && child.root !== repo.root) roots.push(child.root);
+        if (['selection.json', 'artifact.json'].some(name => existsSync(path.join(candidate, '.codebase-memory', name)))) candidates.push(realpathSync(candidate));
       }
-    } catch { /* A malformed manifest does not block the opted-in root. */ }
   }
-  return [...new Set(roots)];
+  const expected = [...new Set(candidates.filter(candidate => ['selection.json', 'artifact.json'].some(name => existsSync(path.join(candidate, '.codebase-memory', name)))))];
+  try { return expected.map(candidate => optedRepository(candidate).root); }
+  catch (error) { error.expectedRoots = expected; throw error; }
+}
+
+function canonicalRoot(root) { try { return path.resolve(realpathSync(root)); } catch { return path.resolve(root); } }
+export class ReadinessGate {
+  constructor(resolve, defaultRoot) { this.resolve = resolve; this.defaultRoot = defaultRoot; this.tools = new Map(); this.failures = new Map(); this.identities = new Map(); }
+  register(tools) { for (const tool of tools) this.tools.set(tool.name, tool.inputSchema); }
+  fail(roots, message) {
+    for (const value of roots) {
+      const root = canonicalRoot(value); this.failures.set(root, message);
+      const aliases = new Set([root]);
+      for (const name of ['artifact.json', 'selection.json']) {
+        try { const project = JSON.parse(readFileSync(path.join(root, '.codebase-memory', name), 'utf8')).project; if (typeof project === 'string') aliases.add(project); } catch { /* Keep the root barrier even when metadata is unreadable. */ }
+      }
+      this.identities.set(root, aliases);
+    }
+  }
+  success(receipts) {
+    for (const receipt of receipts) if (['ready', 'working'].includes(receipt.status)) {
+      const root = canonicalRoot(receipt.root); this.failures.delete(root); this.identities.delete(root);
+    }
+  }
+  async check(name, args = {}) {
+    if (!this.failures.size || ['list_projects', 'index_status'].includes(name)) return;
+    const schema = this.tools.get(name);
+    if (!schema) throw new Error('Tool schema has not been discovered; readiness cannot be established');
+    const keys = Object.keys(schema.properties ?? {}).filter(key => key === 'project' || key.endsWith('_project'));
+    // Native 0.11 also accepts these spellings even though only project is
+    // advertised in the registry. Never let an accepted alias skip the gate.
+    if (keys.includes('project')) for (const alias of ['project_name', 'project_id', 'projectName']) if (args[alias] !== undefined) keys.push(alias);
+    if (!keys.length) return;
+    for (const key of keys) {
+      const value = args[key];
+      if (value === undefined && keys.some(other => other !== key && args[other] !== undefined)) continue;
+      let identity;
+      try { identity = value ? await this.resolve(value) : { root: this.defaultRoot }; }
+      catch { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }
+      if (typeof identity === 'string') identity = { root: identity };
+      if (!identity?.root) throw new Error('Project identity cannot be resolved while repository preparation has failed');
+      const matched = [...this.identities].find(([, aliases]) => aliases.has(value) || (identity.project && aliases.has(identity.project)));
+      const failure = this.failures.get(canonicalRoot(identity.root)) ?? (matched ? this.failures.get(matched[0]) : undefined);
+      if (failure) throw new Error(failure);
+    }
+  }
 }
 export function normalizeRoots(message) {
   if (!Array.isArray(message.result?.roots)) return message;
@@ -56,9 +127,18 @@ export function normalizeRoots(message) {
 }
 export async function main(args = process.argv.slice(2)) {
   const binary = binaryPath();
-  const prepared = new Set(), workers = new Set(), observers = new Map(), failures = new Map();
+  const prepared = new Set(), workers = new Set(), observers = new Map();
+  const sessionRoot = gitRoot(process.cwd()) ?? process.cwd();
+  let resolver;
+  const gate = new ReadinessGate(async project => {
+    resolver ??= startSession(sessionRoot, { command: binary, args: [], timeout: 15000 });
+    const native = await resolver;
+    const value = toolData(await native.request('tools/call', { name: 'index_status', arguments: { project, format: 'json' } }));
+    if (!value.root_path) throw new Error('Native project has no repository root');
+    return { root: value.root_path, project: value.project };
+  }, sessionRoot);
   let child;
-  function cleanup() { child?.kill(); for (const worker of workers) worker.kill(); for (const session of observers.values()) session.then(value => value?.close()); }
+  function cleanup() { child?.kill(); for (const worker of workers) worker.kill(); for (const session of observers.values()) session.then(value => value?.close()); resolver?.then(value => value?.close()).catch(() => {}); }
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { cleanup(); process.exit(1); });
   async function prepareOne(cwd) {
     const repo = optedRepository(cwd);
@@ -70,7 +150,9 @@ export async function main(args = process.argv.slice(2)) {
     catch (error) { console.error(`[codebase-memory] Working index refresh deferred: ${error.message.split('\n')[0]}`); }
   }
   async function prepare(cwd) {
-    const roots = workingRoots(cwd);
+    let roots;
+    try { roots = workingRoots(cwd); }
+    catch (error) { gate.fail(error.expectedRoots ?? [gitRoot(cwd) ?? sessionRoot], error.message); return error.expectedRoots ?? []; }
     await Promise.all(roots.filter(root => !prepared.has(root)).map(root => {
       prepared.add(root);
       return new Promise(resolve => {
@@ -79,7 +161,7 @@ export async function main(args = process.argv.slice(2)) {
         const timeout = setTimeout(() => worker.kill(), 50000);
         const done = code => {
           clearTimeout(timeout); workers.delete(worker);
-          if (selection(root)) { if (code === 0) failures.delete(root); else failures.set(root, 'Repository preparation failed; call prepare_codebase_task before new work'); }
+          if (selection(root)) { if (code === 0) gate.success([{ root, status: 'working' }]); else gate.fail([root], 'Repository preparation failed; call prepare_codebase_task before new work'); }
           resolve();
         };
         worker.on('error', () => done(1)); worker.on('exit', done);
@@ -88,8 +170,7 @@ export async function main(args = process.argv.slice(2)) {
     return roots;
   }
   if (args[0] === 'prepare-one') { await prepareOne(args[1] ?? process.cwd()); return; }
-  if (args[0] === 'prepare') { await prepare(args[1] ?? process.cwd()); return; }
-  const sessionRoot = optedRepository(process.cwd())?.root ?? process.cwd();
+  if (args[0] === 'prepare') { await prepare(args[1] ?? process.cwd()); if (gate.failures.size) throw new Error([...gate.failures.values()].join('\n')); return; }
   async function observe(roots) {
     // Workspace children have independent Git status. Keep native sessions for
     // their already indexed databases so each gets its own watcher registration.
@@ -121,6 +202,7 @@ export async function main(args = process.argv.slice(2)) {
         try {
           const message = JSON.parse(line);
           if (toolLists.delete(message.id) && Array.isArray(message.result?.tools)) {
+            gate.register(message.result.tools);
             message.result.tools.push(...TASK_TOOLS); line = JSON.stringify(message);
           }
         } catch { /* Preserve native diagnostics/protocol errors. */ }
@@ -143,20 +225,26 @@ export async function main(args = process.argv.slice(2)) {
                 const args = message.params.arguments ?? {};
                 if (typeof args.cwd !== 'string' || !path.isAbsolute(args.cwd) || !Number.isInteger(args.wait_ms ?? 60000) || (args.wait_ms ?? 60000) < 0 || (args.wait_ms ?? 60000) > 120000 || !['new', 'resume'].includes(args.mode ?? 'new')) throw new Error('Invalid task preparation arguments');
                 const result = await prepareTask(args.cwd, { mode: message.params.name === 'finish_codebase_task' ? 'finish' : args.mode ?? 'new', waitMs: args.wait_ms ?? 60000 });
-                for (const root of workingRoots(args.cwd)) failures.delete(root);
+                gate.success(result.repositories);
                 await observe(workingRoots(args.cwd));
                 process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: false } }) + '\n');
               } catch (error) {
-                for (const root of workingRoots(message.params.arguments?.cwd ?? sessionRoot)) if (selection(root)) failures.set(root, error.message);
+                let roots = error.expectedRoots;
+                if (!roots) { try { roots = workingRoots(message.params.arguments?.cwd ?? sessionRoot); } catch (failure) { roots = failure.expectedRoots; } }
+                gate.fail(roots ?? [sessionRoot], error.message);
                 process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n');
               }
               return;
             }
-            if (message.method === 'tools/call' && message.params.arguments?.project) {
-              const refused = [...failures].find(([root]) => [optedRepository(root)?.project, selection(root)?.project].includes(message.params.arguments.project));
-              if (refused) {
-                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: refused[1] }], isError: true } }) + '\n');
-                return;
+            if (message.method === 'tools/call') {
+              try {
+                if (!gate.tools.has(message.params.name) && gate.failures.size) {
+                  resolver ??= startSession(sessionRoot, { command: binary, args: [], timeout: 15000 });
+                  gate.register((await (await resolver).request('tools/list')).tools);
+                }
+                await gate.check(message.params.name, message.params.arguments);
+              } catch (error) {
+                process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n'); return;
               }
             }
             for (const root of message.result?.roots ?? []) if (root.uri?.startsWith('file:')) await observe(await prepare(fileURLToPath(root.uri)));
