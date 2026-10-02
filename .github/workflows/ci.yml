@@ -17,6 +17,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.19.0
-      - run: node --test scripts/codebase-memory.test.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm test
       - run: node --check scripts/codebase-memory-client.mjs
       - run: node --check scripts/install-codebase-memory-clients.mjs
+      - run: node --check scripts/codebase-memory-session.mjs
+      - run: npm install -g codebase-memory-mcp@0.11.0
+      - run: npm run test:mcp

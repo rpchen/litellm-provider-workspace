@@ -1,30 +1,25 @@
 #!/usr/bin/env node
 // User-level client setup. Run explicitly; never called by clone/bootstrap or CI.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, readFileSync, mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { binaryPath, run } from './codebase-memory.mjs';
+import { fileEditor, configureOpenCode } from './codebase-memory-config.mjs';
 
 const profile = os.homedir();
 const codexRoot = process.env.CODEX_HOME ?? path.join(profile, '.codex');
 const installRoot = path.join(profile, '.agents', 'codebase-memory');
 const backupRoot = mkdtempSync(path.join((mkdirSync(path.join(codexRoot, 'backups'), { recursive: true }), path.join(codexRoot, 'backups')), 'cbm-clients-'));
+const editor = fileEditor(backupRoot);
+const update = editor.update;
 const instructions = `<!-- CBM_START -->
 ## codebase-memory
 Only use the graph in the nearest Git repository when its root contains .codebase-memory/artifact.json. Never automatically index a new repository.
 At session start or after compaction, read the marker's artifact.json project identifier, discover codebase-memory tools, call list_projects/index_status, and use search_graph, query_graph, trace_path, get_code_snippet, get_architecture before text search for structural code questions. Confirm project/root and coverage; use source reads for stale, skipped or missing coverage. If MCP tool discovery is deferred, search for codebase-memory tools first. Pi exposes these tools directly through its extension.
 Read repository AGENTS.md instructions before implementation. Graph evidence does not replace current Git/source facts.
 <!-- CBM_END -->`;
-function update(file, transform) {
-  const old = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const next = transform(old);
-  if (old === next) return;
-  if (existsSync(file)) copyFileSync(file, path.join(backupRoot, file.replace(/[:\\/]/g, '_')));
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, next);
-}
 function instruct(file) {
   update(file, text => text.includes('<!-- CBM_START -->')
     ? text.replace(/<!-- CBM_START -->[\s\S]*?<!-- CBM_END -->/, instructions)
@@ -58,10 +53,9 @@ const binary = binaryPath();
 if (!path.isAbsolute(binary)) throw new Error('Install native codebase-memory-mcp first, or set CBM_BINARY to its absolute path');
 const registry = await tools(binary);
 mkdirSync(installRoot, { recursive: true });
-for (const name of ['codebase-memory.mjs', 'codebase-memory-client.mjs']) update(path.join(installRoot, name), () => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), name), 'utf8'));
+for (const name of ['codebase-memory.mjs', 'codebase-memory-client.mjs', 'codebase-memory-session.mjs']) update(path.join(installRoot, name), () => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), name), 'utf8'));
 const launcher = path.join(installRoot, 'codebase-memory-client.mjs').replaceAll('\\', '/');
 const node = process.execPath.replaceAll('\\', '/');
-const native = binary.replaceAll('\\', '/');
 // Wrapper has a stable installed location, independent of this workspace checkout.
 update(path.join(codexRoot, 'config.toml'), text => {
   const block = `[mcp_servers.codebase-memory-mcp]\ncommand = ${JSON.stringify(node)}\nargs = [${JSON.stringify(launcher)}]\nenv_vars = ["CBM_CACHE_DIR", "CBM_RUNTIME_DIR"]\nstartup_timeout_sec = 120\n`;
@@ -76,60 +70,30 @@ update(claudeConfig, text => { const config = JSON.parse(text || '{}'); config.m
 instruct(path.join(claudeDir, 'CLAUDE.md'));
 const openDir = process.env.OPENCODE_CONFIG_DIR ?? path.join(profile, '.config/opencode');
 const openConfig = process.env.OPENCODE_CONFIG ?? path.join(openDir, 'opencode.jsonc');
-update(openConfig, text => {
-  // Remove only the v1 entry inserted by CBM's installer; v2 uses mcp.servers.
-  if (/"servers"\s*:/.test(text)) return text;
-  return text.replace(/,?\s*"codebase-memory-mcp"\s*:\s*\{[^}]*\},?/, '');
-});
 const openBinary = process.platform === 'win32' ? path.join(process.env.APPDATA, 'npm/node_modules/@opencode/cli/bin/opencode.exe') : 'opencode';
-run(openBinary, ['mcp', 'add', '--global', 'codebase-memory-mcp', '--', node, launcher]);
-update(openConfig, text => {
-  // The native CLI just wrote this owned server object as JSON. Preserve the surrounding JSONC.
-  const match = /"codebase-memory-mcp"\s*:\s*\{/.exec(text);
-  if (!match) throw new Error('OpenCode did not persist its MCP server configuration');
-  const start = match.index + match[0].length - 1;
-  let depth = 0, quoted = false, escaped = false, end = start;
-  for (; end < text.length; end++) {
-    const char = text[end];
-    if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; }
-    else if (char === '"') quoted = true;
-    else if (char === '{') depth++;
-    else if (char === '}' && --depth === 0) break;
-  }
-  const server = JSON.parse(text.slice(start, end + 1));
-  server.timeout = { ...server.timeout, startup: 120000, request: 120000 };
-  return text.slice(0, start) + JSON.stringify(server, null, 2) + text.slice(end + 1);
-});
+configureOpenCode(openConfig, editor, () => run(openBinary, ['mcp', 'add', '--global', 'codebase-memory-mcp', '--', node, launcher]));
 instruct(path.join(openDir, 'AGENTS.md'));
 const piDir = process.env.PI_CODING_AGENT_DIR ?? path.join(profile, '.pi/agent');
 instruct(path.join(piDir, 'AGENTS.md'));
 const extension = `// Installed from the native MCP registry by install-codebase-memory-clients.mjs.
-import { spawn } from 'node:child_process';
-const BIN = ${JSON.stringify(native)};
+import { startSession } from ${JSON.stringify(pathToFileURL(path.join(installRoot, 'codebase-memory-session.mjs')).href)};
 const TOOLS = ${JSON.stringify(registry)};
-function invoke(command, args, signal, cwd, input) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    let out = '', err = '';
-    const abort = () => child.kill();
-    signal?.addEventListener('abort', abort, { once: true });
-    child.stdout.on('data', data => out += data);
-    child.stderr.on('data', data => err += data);
-    child.stdin.on('error', reject);
-    child.on('error', reject);
-    child.on('close', code => { signal?.removeEventListener('abort', abort); code === 0 ? resolve(out) : reject(new Error(err || 'codebase-memory failed')); });
-    child.stdin.end(input);
-  });
-}
 export default function (pi) {
+  let session, pending;
+  async function connected(cwd) {
+    if (!pending || session?.closed) pending = startSession(cwd).then(value => session = value).catch(error => { pending = undefined; throw error; });
+    return pending;
+  }
   pi.on('session_start', async (_event, ctx) => {
-    await invoke(${JSON.stringify(node)}, [${JSON.stringify(launcher)}, 'prepare', ctx.cwd], undefined, ctx.cwd).catch(() => {});
+    session?.close(); session = undefined; pending = undefined;
+    await connected(ctx.cwd).catch(() => {});
   });
+  pi.on('session_shutdown', () => { session?.close(); pending = undefined; });
   for (const tool of TOOLS) pi.registerTool({
     name: tool.name, label: tool.name, description: tool.description, parameters: tool.inputSchema,
     async execute(_id, params, signal, _update, ctx) {
-      const output = await invoke(BIN, ['cli', '--quiet', '--json', tool.name], signal, ctx.cwd, JSON.stringify(params));
-      const result = JSON.parse(output.trim());
+      const client = await connected(ctx.cwd);
+      const result = await client.request('tools/call', { name: tool.name, arguments: params }, signal);
       if (result.isError || result.error) throw new Error(JSON.stringify(result));
       return { content: result.content ?? [{ type: 'text', text: JSON.stringify(result) }], details: result.structuredContent ?? result };
     }
