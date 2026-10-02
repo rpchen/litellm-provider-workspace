@@ -118,7 +118,11 @@ export class ReadinessGate {
   }
   async check(name, args = {}) {
     if (['list_projects', 'index_status'].includes(name)) return;
-    if (!this.failures.size && !this.pending.size) return;
+    // A preparation still in flight may be about to succeed or fail for this
+    // root; queries wait for that outcome before the gate decides. Waiting
+    // needs no tool schema: only a failure rejection identifies project args.
+    if (this.pending.size) await Promise.all([...this.pending.values()].map(entry => entry.promise));
+    if (!this.failures.size) return;
     const schema = this.tools.get(name);
     if (!schema) throw new Error('Tool schema has not been discovered; readiness cannot be established');
     const keys = Object.keys(schema.properties ?? {}).filter(key => key === 'project' || key.endsWith('_project'));
@@ -130,17 +134,10 @@ export class ReadinessGate {
       const value = args[key];
       if (value === undefined && keys.some(other => other !== key && args[other] !== undefined)) continue;
       let identity;
-      const resolveIdentity = () => this.resolve(value).then(result => typeof result === 'string' ? { root: result } : result);
-      try { identity = value ? await resolveIdentity() : { root: this.defaultRoot }; }
-      catch (error) {
-        // A preparation still in flight may not have registered this project
-        // yet. Await every pending outcome, then retry resolution once.
-        if (this.pending.size) { await Promise.all([...this.pending.values()].map(entry => entry.promise)); identity = value ? await resolveIdentity().catch(() => { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }) : { root: this.defaultRoot }; }
-        else throw new Error('Project identity cannot be resolved while repository preparation has failed');
-      }
+      try { identity = value ? await this.resolve(value) : { root: this.defaultRoot }; }
+      catch { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }
+      if (typeof identity === 'string') identity = { root: identity };
       if (!identity?.root) throw new Error('Project identity cannot be resolved while repository preparation has failed');
-      await this.awaitSettled(identity.root);
-      if (!this.failures.size) continue;
       const matched = [...this.identities].find(([, aliases]) => [value, identity.project].some(project =>
         typeof project === 'string' && [...aliases].some(alias => project === alias ||
           (project.startsWith(`${alias}-main-`) && /^[a-f0-9]{40}$/.test(project.slice(alias.length + 6))))));
@@ -160,6 +157,7 @@ export function normalizeRoots(message) {
 export async function main(args = process.argv.slice(2)) {
   const binary = binaryPath();
   const prepared = new Set(), workers = new Set(), observers = new Map();
+  const preparations = new Map();
   const sessionRoot = gitRoot(process.cwd()) ?? process.cwd();
   let resolver;
   const gate = new ReadinessGate(async project => {
@@ -206,7 +204,12 @@ export async function main(args = process.argv.slice(2)) {
         worker.on('error', () => done(1)); worker.on('exit', done);
       });
     })).then(() => settled());
-    if (args[0] === 'prepare') await running;
+    // The CLI 'prepare' entry waits for the outcome to report it; the
+    // startup path stores it so watcher sessions open only after the
+    // working graphs exist (the native daemon registers watchers when a
+    // session starts, against what the database already contains).
+    if (args[0] === 'prepare') { await running; return roots; }
+    (preparations.get(cwd) ?? preparations.set(cwd, []).get(cwd)).push(running);
     return roots;
   }
   if (args[0] === 'prepare-one') { await prepareOne(args[1] ?? process.cwd()); return; }
@@ -214,9 +217,14 @@ export async function main(args = process.argv.slice(2)) {
   async function observe(roots) {
     // Workspace children have independent Git status. Keep native sessions for
     // their already indexed databases so each gets its own watcher registration.
-    await Promise.all(roots.filter(root => root !== sessionRoot).map(root => {
-      if (!observers.has(root)) observers.set(root, startSession(root, { command: binary, args: [], timeout: 15000 }).catch(() => undefined));
-      return observers.get(root);
+    // Cold starts under concurrent daemons can exceed a short handshake
+    // timeout; retry once before giving up on the watcher session.
+    await Promise.all(roots.filter(root => root !== sessionRoot).map(async root => {
+      if (observers.has(root)) return observers.get(root);
+      const session = await startSession(root, { command: binary, args: [], timeout: 60000 }).catch(() => undefined)
+        ?? await startSession(root, { command: binary, args: [], timeout: 60000 }).catch(() => undefined);
+      observers.set(root, Promise.resolve(session));
+      return session;
     }));
   }
   if (args[0] !== 'hook-augment') {
@@ -224,7 +232,14 @@ export async function main(args = process.argv.slice(2)) {
     // window is far shorter than a full four-repository preparation. The
     // daemon starts immediately; the gate keeps queries waiting until the
     // same preparation outcome (success or explicit failure) has settled.
-    const background = prepare(sessionRoot).then(async roots => { if (!args.length) await observe(roots); });
+    // Watcher sessions open only after the preparations finish: the native
+    // daemon registers watchers when a session starts, against what the
+    // database already contains.
+    const background = (async () => {
+      const roots = await prepare(sessionRoot);
+      await Promise.all((preparations.get(sessionRoot) ?? []).map(pending => pending));
+      if (!args.length) await observe(roots);
+    })();
     if (args.length) await background;
   }
   child = spawn(binary, args, { cwd: sessionRoot, windowsHide: true, stdio: ['pipe', args.length ? 'inherit' : 'pipe', 'inherit'] });
@@ -301,7 +316,15 @@ export async function main(args = process.argv.slice(2)) {
                 process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: handled.id, result: { content: [{ type: 'text', text: error.message }], isError: true } }) + '\n'); return;
               }
             }
-            for (const root of handled.result?.roots ?? []) if (root.uri?.startsWith('file:')) await observe(await prepare(fileURLToPath(root.uri)));
+            for (const root of handled.result?.roots ?? []) if (root.uri?.startsWith('file:')) {
+              const reportedRoot = fileURLToPath(root.uri);
+              // The reported root may be new to this session; its watcher
+              // session must open after its own preparation settles, exactly
+              // like the startup path.
+              const roots = await prepare(reportedRoot);
+              await Promise.all((preparations.get(reportedRoot) ?? []).map(pending => pending));
+              await observe(roots);
+            }
             forwarded = JSON.stringify(handled);
           } catch { /* Forward malformed protocol messages for native handling. */ }
           if (!child.stdin.destroyed) child.stdin.write(forwarded + '\n');
