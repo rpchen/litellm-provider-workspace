@@ -15,6 +15,21 @@
 | Workspace 远端与 bootstrap（2026-09-30） | workspace 总仓库发布到 GitHub public 仓库 [`rpchen/litellm-provider-workspace`](https://github.com/rpchen/litellm-provider-workspace)，默认分支 `main`；新机器用 `scripts/bootstrap.ps1` 按 `workspace.json` 恢复三仓库开发环境 | 仅凭 workspace 仓库即可恢复完整开发 workspace；bootstrap 只创建缺失子仓库，已有子仓库只检查不改动（origin 不匹配即 fail closed），不使用 submodule、不自动装依赖 |
 | 移除 workspace OpenSpec（2026-09-30） | workspace 总仓库删除 `openspec/` 目录与 OpenSpec 专用 skills；产品 specification 只存在于三个子仓库各自的 OpenSpec；跨仓库协作规则沉淀在 `AGENTS.md` / `docs/` / `.agents/skills/` | workspace 只负责跨仓库协作与开发基础设施，不承担产品 specification 职责 |
 
-## 待办（需要另行确认后再做）
+## 代码索引与客户端接入（2026-10-02）
+
+- 用户明确选择为工作区和三个子仓库建索引并入库；新仓库不自动索引。
+- 日常 Codex、OpenCode v2、Claude Code 使用 MCP；Pi 通过扩展提供同一原生工具注册表。会话使用约定与 MCP 配置同时生效，缺失/过时 coverage 回读源码。
+- 两个插件的现有 Release 工作流生成绑定 tag SHA 的图谱、metadata 与 SHA-256 manifest，并发布后回读校验；Core 仅在未来 Release published 后附加索引，不主动创建 Release；总工作区仍不发版。
+- 用户确认本地在下一次启动任一编码工具时同步最新 Release，工作图谱按当前检出源码另行刷新。发布快照单独缓存，不切分支或覆盖 checkout；离线下次重试。
+- 本次是开发索引与发布工具改动，不改变 discovery 公共 API、插件 dist/provenance 或发版授权边界；四个 PR 可独立评审。
+
+## 索引工具审核修复（2026-10-02）
+
+- 工作图谱由原生工具按本机规范化 Git 根派生 project；发布快照名称不作为本机缓存身份。MCP 启动目录与工作索引根一致，工作区独立子仓库和 Pi 保留持久原生连接以注册 watcher，继续保持 `auto_index=false`。
+- OpenCode 迁移使用 `jsonc-parser` 结构化编辑；配置在首次迁移或原生 CLI 写入前按原始字节备份一次，同次安装的后续更新和失败不得覆盖该备份。依赖只属于私有工作区工具链，客户端运行时不需要它。
+- 四仓库发布工具必须解析原生 `indexed` 成功状态；`degraded`、未知、缺失或其他状态在生成 manifest 前失败。`ready` 与正节点数只用于可用性检查，不能证明完整成功。
+- 回归覆盖两种 MCP 返回格式、JSONC 项位置/嵌套/注释及 CLI 失败；原生 MCP 测试验证新路径与子目录启动后的实时更新。长期维护证据以脚本、文档和各子仓库 canonical OpenSpec 为准。
+
+## 其他待办（需要另行确认后再做）
 
 - 子仓库文档中若有"物理嵌套在 LiteLLM 部署仓库目录下"之类的旧描述（如 `pi-litellm-provider/AGENTS.md`、`openspec/config.yaml`），应在各自仓库通过 PR 更新；这不在总仓库迁移范围内。

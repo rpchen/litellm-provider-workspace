@@ -85,6 +85,8 @@ litellm-discovery-core  ──(构建期取 main 的完整 SHA，编入 dist)─
 
 ## 规则
 
+代码结构查询先发现 codebase-memory 工具并确认最近 Git 根目录、project/status 与 coverage。只刷新已存在 `.codebase-memory/artifact.json` 的仓库；不得自动为新仓库建索引。用户级跨客户端接入与 Release 索引流程见 `docs/codebase-memory.md`。
+
 1. **临时文件**一律放 `.tmp/`；需要保留的脚本放 `scripts/`，文档放 `docs/`。
 2. **agent-neutral**：workspace 的项目规范与 skills 只在根 `AGENTS.md`、`.agents/skills/`、`docs/`、`scripts/` 维护，不向 `.codex/`、`.pi/`、`.opencode/`、`.claude/` 复制；子仓库内部若有自己的 skills 约定，以子仓库为准。
 3. **OpenSpec 分工**：workspace 总仓库**不维护 OpenSpec**（产品 specification 只存在于三个子仓库各自的 `openspec/`）。只影响一个仓库的变更，在该仓库自己的 `openspec/` 立提案；同时改变多个仓库契约或流程的变更（如 core 公共 API 变化、跨仓库发版顺序、共享测试标准），在每个受影响子仓库各自的 `openspec/` 立提案并互相引用，跨仓库的协作规则同步沉淀在本文件、`docs/` 与 `.agents/skills/`。
