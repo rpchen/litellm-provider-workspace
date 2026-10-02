@@ -62,3 +62,7 @@ node scripts/workspace.mjs exec -- git log -1 --oneline    # 在三个项目里�
 3. 跨项目的方案讨论、共享规则的变更，沉淀在本仓库的 `AGENTS.md` / `docs/` / `.agents/skills/`；产品 specification 不在本仓库定义，只存在于各子仓库自己的 OpenSpec。
 
 更多约定见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [docs/decisions.md](docs/decisions.md)。
+
+## 代码索引
+
+已有 `.codebase-memory/` 索引随仓库共享；新仓库由用户显式选择。Codex、OpenCode v2、Pi 和 Claude Code 的用户级接入、工具启动时同步，以及 Release 图谱附件流程见 [docs/codebase-memory.md](docs/codebase-memory.md)。

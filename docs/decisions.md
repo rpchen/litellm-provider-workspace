@@ -15,6 +15,14 @@
 | Workspace 远端与 bootstrap（2026-09-30） | workspace 总仓库发布到 GitHub public 仓库 [`rpchen/litellm-provider-workspace`](https://github.com/rpchen/litellm-provider-workspace)，默认分支 `main`；新机器用 `scripts/bootstrap.ps1` 按 `workspace.json` 恢复三仓库开发环境 | 仅凭 workspace 仓库即可恢复完整开发 workspace；bootstrap 只创建缺失子仓库，已有子仓库只检查不改动（origin 不匹配即 fail closed），不使用 submodule、不自动装依赖 |
 | 移除 workspace OpenSpec（2026-09-30） | workspace 总仓库删除 `openspec/` 目录与 OpenSpec 专用 skills；产品 specification 只存在于三个子仓库各自的 OpenSpec；跨仓库协作规则沉淀在 `AGENTS.md` / `docs/` / `.agents/skills/` | workspace 只负责跨仓库协作与开发基础设施，不承担产品 specification 职责 |
 
+## 代码索引与客户端接入（2026-10-02）
+
+- 用户明确选择为工作区和三个子仓库建索引并入库；新仓库不自动索引。
+- 日常 Codex、OpenCode v2、Claude Code 使用 MCP；Pi 通过扩展提供同一原生工具注册表。会话使用约定与 MCP 配置同时生效，缺失/过时 coverage 回读源码。
+- 两个插件的现有 Release 工作流生成绑定 tag SHA 的图谱、metadata 与 SHA-256 manifest，并发布后回读校验；Core 仅在未来 Release published 后附加索引，不主动创建 Release；总工作区仍不发版。
+- 用户确认本地在下一次启动任一编码工具时同步最新 Release，工作图谱按当前检出源码另行刷新。发布快照单独缓存，不切分支或覆盖 checkout；离线下次重试。
+- 本次是开发索引与发布工具改动，不改变 discovery 公共 API、插件 dist/provenance 或发版授权边界；四个 PR 可独立评审。
+
 ## 待办（需要另行确认后再做）
 
 - 子仓库文档中若有"物理嵌套在 LiteLLM 部署仓库目录下"之类的旧描述（如 `pi-litellm-provider/AGENTS.md`、`openspec/config.yaml`），应在各自仓库通过 PR 更新；这不在总仓库迁移范围内。
