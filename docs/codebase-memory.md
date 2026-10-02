@@ -14,7 +14,7 @@ MCP 配置使工具进入客户端的工具列表，使用约定使代理知道�
 2. 在工作区运行 `node scripts/install-codebase-memory-clients.mjs`。它备份将改动的配置，安装用户级启动入口，然后配置 Codex、Claude Code、OpenCode v2 和 Pi。不会建新索引、改 branch/tag、发布或提交。
 3. 重启四个客户端。Codex/Claude Code/OpenCode 使用 stdio MCP；Pi 原生没有 MCP client，因此扩展按原生 MCP 注册表提供同名工具，使用相同参数和本地数据库。安装支持本机 Junction，不改权限或目录布局。
 
-运行时脚本安装到用户目录 `~/.agents/codebase-memory/`，不依赖这个工作区所在路径。项目治理仍以各仓库 `AGENTS.md` 为真源。安装器固定 `auto_index=false`；支持 MCP 的客户端保留 `auto_watch=true`，Pi 在 session_start 刷新。默认 watcher 可在本地源码变化后更新缓存及持久图谱，产生 `.codebase-memory/` 文件变化；它不自动提交或推送。
+运行时脚本安装到用户目录 `~/.agents/codebase-memory/`，不依赖这个工作区所在路径。项目治理仍以各仓库 `AGENTS.md` 为真源。安装器固定 `auto_index=false`；支持 MCP 的客户端保留 `auto_watch=true`，Pi 在 session_start 刷新。CBM 0.11.0 对已有持久目录会在刷新缓存时自动重新导出图谱，即使 `persistence=false` 也可能更新 `.codebase-memory/graph.db.zst` 和 `artifact.json`；watcher 同样会导出。日常启动因此可能留下索引生成文件变化，不自动提交或推送；按 Release/里程碑审阅并提交这些变化。
 
 ## 启动同步与 Release
 
