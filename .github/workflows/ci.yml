@@ -24,3 +24,5 @@ jobs:
       - run: node --check scripts/codebase-memory-session.mjs
       - run: npm install -g codebase-memory-mcp@0.11.0
       - run: npm run test:mcp
+      - name: Verify index generation for the reviewed source
+        run: node scripts/codebase-memory-main.mjs build

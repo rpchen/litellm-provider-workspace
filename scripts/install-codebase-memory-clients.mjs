@@ -7,6 +7,7 @@ import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { binaryPath, run } from './codebase-memory.mjs';
 import { fileEditor, configureOpenCode } from './codebase-memory-config.mjs';
+import { TASK_TOOLS } from './codebase-memory-client.mjs';
 
 const profile = os.homedir();
 const codexRoot = process.env.CODEX_HOME ?? path.join(profile, '.codex');
@@ -19,6 +20,7 @@ const instructions = `<!-- CBM_START -->
 Only use the graph in the nearest Git repository when its root contains .codebase-memory/artifact.json. Never automatically index a new repository.
 At session start or after compaction, read the marker's artifact.json project identifier, discover codebase-memory tools, call list_projects/index_status, and use search_graph, query_graph, trace_path, get_code_snippet, get_architecture before text search for structural code questions. Confirm project/root and coverage; use source reads for stale, skipped or missing coverage. If MCP tool discovery is deferred, search for codebase-memory tools first. Pi exposes these tools directly through its extension.
 Read repository AGENTS.md instructions before implementation. Graph evidence does not replace current Git/source facts.
+For repositories with tracked .codebase-memory/selection.json distribution=merged-main, every NEW task must first call prepare_codebase_task with the current absolute repository/workspace cwd and mode=new, even if this MCP server is already connected. Start implementation only after status=ready. Use mode=resume only for explicitly continuing existing work. After an authorized PR merge, call finish_codebase_task; report completion only when code SHA and the local/remote immutable snapshot checksums agree. Preserve unfinished branches and source edits; never stash/reset/clean them automatically.
 <!-- CBM_END -->`;
 function instruct(file) {
   update(file, text => text.includes('<!-- CBM_START -->')
@@ -30,6 +32,7 @@ async function tools(binary) {
   let buffer = '';
   const pending = new Map(); let next = 0;
   const timer = setTimeout(() => child.kill(), 15000);
+  child.stdout.setEncoding('utf8');
   child.stdout.on('data', data => {
     buffer += data;
     let end;
@@ -51,9 +54,9 @@ async function tools(binary) {
 }
 const binary = binaryPath();
 if (!path.isAbsolute(binary)) throw new Error('Install native codebase-memory-mcp first, or set CBM_BINARY to its absolute path');
-const registry = await tools(binary);
+const registry = [...await tools(binary), ...TASK_TOOLS];
 mkdirSync(installRoot, { recursive: true });
-for (const name of ['codebase-memory.mjs', 'codebase-memory-client.mjs', 'codebase-memory-session.mjs']) update(path.join(installRoot, name), () => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), name), 'utf8'));
+for (const name of ['codebase-memory.mjs', 'codebase-memory-main.mjs', 'codebase-memory-client.mjs', 'codebase-memory-session.mjs']) update(path.join(installRoot, name), () => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), name), 'utf8'));
 const launcher = path.join(installRoot, 'codebase-memory-client.mjs').replaceAll('\\', '/');
 const node = process.execPath.replaceAll('\\', '/');
 // Wrapper has a stable installed location, independent of this workspace checkout.
@@ -93,7 +96,8 @@ export default function (pi) {
     name: tool.name, label: tool.name, description: tool.description, parameters: tool.inputSchema,
     async execute(_id, params, signal, _update, ctx) {
       const client = await connected(ctx.cwd);
-      const result = await client.request('tools/call', { name: tool.name, arguments: params }, signal);
+      const argumentsForTool = ['prepare_codebase_task', 'finish_codebase_task'].includes(tool.name) ? { ...params, cwd: params.cwd ?? ctx.cwd } : params;
+      const result = await client.request('tools/call', { name: tool.name, arguments: argumentsForTool }, signal);
       if (result.isError || result.error) throw new Error(JSON.stringify(result));
       return { content: result.content ?? [{ type: 'text', text: JSON.stringify(result) }], details: result.structuredContent ?? result };
     }

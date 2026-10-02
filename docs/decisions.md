@@ -33,3 +33,7 @@
 ## 其他待办（需要另行确认后再做）
 
 - 子仓库文档中若有"物理嵌套在 LiteLLM 部署仓库目录下"之类的旧描述（如 `pi-litellm-provider/AGENTS.md`、`openspec/config.yaml`），应在各自仓库通过 PR 更新；这不在总仓库迁移范围内。
+
+## 每次合并与新任务的索引一致性（2026-10-02）
+
+用户明确要求每次审核通过并合并的 PR 收尾时，本地与远端索引一致；任一客户端新任务先同步最新代码与索引。该要求替代此前“只按 Release 更新共享快照”的日常策略。已审核源码由 PR CI 生成候选索引，准确 merge SHA 的完整 CI 成功后发布到长期 `codebase-memory-index` 分支，以 source SHA 作为不可变目录。source main 只跟踪 selection.json，原生生成文件在移除 Git 跟踪前备份。finish 取得远端同一快照并校验全部字节，ready 才算完成；prepare 每个新任务都执行，MCP 复用连接不豁免。工作目录未完成工作保留，准备失败不冒充最新。Release 附件继续保留，产品 API/dist/provenance、版本/tag/Release 授权边界不变。

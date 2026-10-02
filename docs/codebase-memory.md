@@ -2,7 +2,7 @@
 
 ## 使用约定
 
-新仓库不自动建索引。仓库根目录的 `.codebase-memory/artifact.json` 是显式选择标记；工作区与三个独立子仓库已选择并入库。代理在会话开始确认最近 Git 根目录、索引 project/status，并在定位代码、理解结构、调用链和影响范围时先使用图谱工具；coverage 过时、缺失或跳过的部分回读源码。
+新仓库不自动建索引。四个仓库用已入库的 `.codebase-memory/selection.json` 显式选择 `merged-main` 分发。原生 `artifact.json` 与图谱是被忽略的工作文件；旧仓库只有 artifact.json 时仍保留原有接入方式。代理每个新任务先同步最新 main 与对应远端索引，再确认工作 marker 的 project/status；结构查询优先使用图谱，coverage 过时、缺失或跳过的部分回读源码。
 
 MCP 配置使工具进入客户端的工具列表，使用约定使代理知道何时调用。两者都需要配置。模型是否遵循约定仍须从实际工具调用判断，不能把配置存在等同于每次任务必然调用。
 
@@ -14,18 +14,36 @@ MCP 配置使工具进入客户端的工具列表，使用约定使代理知道�
 2. 在工作区先运行 `npm ci --ignore-scripts` 安装工具链开发依赖，再运行 `node scripts/install-codebase-memory-clients.mjs`。它在任何修改前只保存一次原始配置字节，安装用户级启动入口，然后配置 Codex、Claude Code、OpenCode v2 和 Pi。OpenCode 的旧配置使用 JSONC 结构化编辑并校验，原始备份不会被 CLI 写入的中间状态覆盖。不会建新索引、改 branch/tag、发布或提交。
 3. 重启四个客户端。Codex/Claude Code/OpenCode 使用 stdio MCP；Pi 扩展按原生 MCP 注册表提供同名工具，并持有相同的 stdio MCP 会话直至 session_shutdown，使用相同参数和本地数据库。安装支持本机 Junction，不改权限或目录布局。
 
-运行时脚本安装到用户目录 `~/.agents/codebase-memory/`，不依赖这个工作区所在路径。项目治理仍以各仓库 `AGENTS.md` 为真源。安装器固定 `auto_index=false`，保留 `auto_watch=true`；四个客户端均通过持久 MCP 会话注册已有数据库的原生 watcher。CBM 0.11.0 对已有持久目录会在刷新缓存时自动重新导出图谱，即使 `persistence=false` 也可能更新 `.codebase-memory/graph.db.zst` 和 `artifact.json`；watcher 同样会导出。日常启动因此可能留下索引生成文件变化，不自动提交或推送；按 Release/里程碑审阅并提交这些变化。
+运行时脚本安装到用户目录 `~/.agents/codebase-memory/`，不依赖这个工作区所在路径。安装器固定 `auto_index=false`、`auto_watch=true`，四客户端保留持久原生会话。0.11.0 会重新导出已有工作图谱；这些输出现在被 Git 忽略，不再污染源码 PR 或 main。用户原有生成文件在迁移前备份，移除的是 Git 跟踪关系。
+
+## 每次 PR 的完成条件
+
+1. PR 的 CI 为实际审核源码生成完整候选索引；非 indexed 状态阻止 CI 成功。
+2. 合并后，准确 merge SHA 的完整 CI 成功触发 `Publish main index`。它再次核对该 SHA 的 CI，生成索引并把图谱、原生 metadata、SHA-256 manifest 写到独立 `codebase-memory-index` 分支的 `snapshots/<source-SHA>/`。首次创建该分支是索引分发，不创建产品 tag/Release。
+3. 同一源码 SHA 的快照不可覆盖。发布脚本下载远端结果并逐字节校验；索引分支只向前追加，不能反过来提交源码 main，也不会触发循环构建。这里使用长期 Git 存储，避免 Actions 临时附件过期。
+4. 当前完成任务的客户端调用 `finish_codebase_task`，切回最新 main、取得相同 SHA 的远端快照、校验本地缓存与远端三文件的 Git blob/SHA-256，并激活当前代码的原生工作图谱。返回 ready 才能报告合并收尾完成。PR 显示 merged 本身不算完成。
+
+索引 manifest 的源码 SHA 来自已经存在的合并提交，因此没有“快照提交必须包含自己的 SHA”的循环。发布失败或尚未完成时，准备工具明确报 pending，不能静默把旧索引当成最新。
+
+## 新任务先同步
+
+Codex、OpenCode、Claude Code 和 Pi 均暴露 `prepare_codebase_task` 与 `finish_codebase_task`。每个新任务必须先调用 prepare，传当前任务目录和 mode=new；MCP 已经连接也需要调用，不能只依靠进程首次启动。工作区根会同时准备三个已选择子仓库，独立子目录只准备最近 Git 仓库。
+
+prepare 先 fetch 最新远端 main，并在改变 checkout 前取得对应完整 SHA 的已验证快照。干净的 main 只允许 fast-forward；已合并任务分支可以回 main。未提交源码、未合并分支、本地 main 的独有提交或其他 worktree 占用会阻止新任务准备，既有工作保留，不做 stash/reset/clean。显式续做旧任务使用 mode=resume，保留原分支并刷新其工作图谱，不能把该结果称作最新 main。
+
+离线、索引发布失败、身份/校验不符均不返回 ready。客户端需要关注失败结果，不能在旧代码上直接实施新任务。源码同步与原生图谱激活使用仓库级锁，避免四客户端同时改同一 checkout。
 
 ## 启动同步与 Release
 
-客户端启动时，只处理最近 Git 仓库中已有索引的项目。工作区根启动还会检查 `workspace.json` 声明的子仓库，跳过没有索引标记的子仓库。先下载最新 Release 的已验证快照，再按当前检出代码刷新工作图谱；两者可以对应不同 commit，不能混用。
+客户端启动只处理最近 Git 仓库中已显式选择的项目。工作区根还检查 workspace.json 子仓库，跳过未选择仓库。新分发模式优先同步 main 的准确 SHA 快照；Release 快照仍单独下载和校验，不能把旧 Release 当作最新 main。
 
 工作图谱不沿用其他机器快照中的名称：刷新不传 name override，让原生工具按本机规范化 Git 根目录生成 project；MCP 同样在这个根目录启动。子目录启动和 Desktop roots/list 均归一到最近的已选择 Git 根。工作区的独立子仓库各保留原生会话注册 watcher，Pi 的会话也不会在初始化后立即退出。查询使用当前 marker/status 返回的本地 project；代码修改无需重启即可由原生 watcher 更新。若用户另行关闭 watcher_enabled，则需要手动 refresh。
 
 | 数据 | 位置 | 用途 |
 |---|---|---|
-| 入库快照 | 各仓库 `.codebase-memory/` | clone 时可得到已选择的共享图谱 |
-| 工作图谱 | codebase-memory 本地数据库缓存 | 匹配当前 branch、未提交源码与 coverage |
+| 显式启用标记 | 源码 main 的 `.codebase-memory/selection.json` | clone 后知道该仓库已选择，不自动选择新仓库 |
+| 每次合并快照 | 远端 codebase-memory-index 分支；本机 `~/.cache/codebase-memory-main/<owner>/<repo>/<SHA>/` | 本地与远端三文件字节一致，准确对应合并提交 |
+| 工作图谱 | 原生本地数据库及被忽略的 `.codebase-memory/` 输出 | 按本机根目录注册 watcher，匹配当前代码与 coverage |
 | 发布快照 | GitHub Release 三个 `codebase-memory.*` 附件 | 对应不可变 tag 的源码 SHA |
 | 本地发布快照 | `~/.cache/codebase-memory-releases/<owner>/<repo>/<commit>/` | 与云端附件校验一致的版本快照，不覆盖 checkout |
 
@@ -37,11 +55,13 @@ GitHub 无法向关机或离线的电脑写文件。本地按用户确认的方�
 
 ## 手动命令与维护
 
-在目标仓库内执行 `node scripts/codebase-memory.mjs sync` 下载最新 Release，`sync vX.Y.Z` 下载指定版本，`refresh` 刷新工作缓存。`build vX.Y.Z` 要求 HEAD 与 tag 相同，更新本地持久快照并把 Release 附件写到 `.tmp/codebase-memory-release/`；它不会创建 tag 或 Release。
+每个新任务执行 `node scripts/codebase-memory-main.mjs prepare`，授权合并后执行 `node scripts/codebase-memory-main.mjs finish`；MCP 两个同名任务工具封装该协议。ready.json 记录 Git SHA、源码 tree、原生 project、快照位置及校验值。`build`/`publish` 由 CI 使用，不在普通客户端自动发布。
+
+原有 `node scripts/codebase-memory.mjs sync [vX.Y.Z]`、`refresh` 和 `build vX.Y.Z` 继续用于 Release 快照与工作图谱；它们不创建 tag/Release。
 
 索引/发布脚本在每个独立仓库内各自可运行，不需要平级 checkout，也不进入插件 runtime/package。客户端启动脚本与安装器由工作区维护；修改后显式重跑安装器更新用户级副本。四个仓库的 Release 工具副本只处理开发索引，不承担 Core 的 discovery 业务算法。
 
-普通 PR 合并不生成 Release 附件。当前流程只在授权的发行过程中生成云端发布快照；客户端的工作索引由启动刷新和适用的 watcher 更新。
+普通 PR 合并生成专用索引分支快照；正式 Release 另外生成该 tag 的附件，发行授权规则保持有效。
 
 ## 验证入口
 

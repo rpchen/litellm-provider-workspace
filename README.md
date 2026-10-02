@@ -70,3 +70,7 @@ node scripts/workspace.mjs exec -- git log -1 --oneline    # 在三个项目里�
 首次接入先运行 `npm ci --ignore-scripts`，再运行 `node scripts/install-codebase-memory-clients.mjs`。安装器保留原始配置备份；重启客户端后，本地路径派生索引由持久 MCP 会话自动更新。
 
 持久 MCP 传输保留源码片段和搜索结果中的中文及 emoji，响应分块不会改变这些内容。
+
+## 每次 PR 后的代码索引
+
+已显式选择的仓库在每个 main 提交通过完整 CI 后，将准确 SHA 的索引发布到 `codebase-memory-index` 分支。新任务先用 `prepare_codebase_task` 同步最新 main 和对应索引；授权合并后用 `finish_codebase_task` 验证本地与远端一致。四客户端共用这两个 MCP 工具，原生工作缓存不会进入源码 PR。详见 [代码索引流程](docs/codebase-memory.md)。
