@@ -63,7 +63,17 @@ function selectedFixture() {
   }
   const root = init(path.join(dir, 'workspace'), 'workspace'), child = init(path.join(root, 'child'), 'child');
   writeFileSync(path.join(root, 'workspace.json'), JSON.stringify({ repos: [{ name: 'child' }] }));
-  return { root, child, cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } };
+  // The native wrong-project probe briefly holds the fixture as a process
+  // working directory on Windows; the release can lag the child's exit by a
+  // few seconds. Bounded whole-tree retries keep cleanup deterministic
+  // without changing any assertion.
+  return { root, child, cleanup() {
+    assert.ok(dir.startsWith(base + path.sep));
+    for (let attempt = 0; ; attempt++) {
+      try { rmSync(dir, { recursive: true, force: true }); return; }
+      catch (error) { if (error.code !== 'EPERM' || attempt === 20) throw error; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250); }
+    }
+  } };
 }
 for (const corruption of ['malformed JSON', 'invalid schema', 'wrong project']) {
   test(`[CBM-SELECTED-METADATA] ${corruption} in a selected child blocks the whole workspace`, { timeout: 120000 }, async () => {
@@ -211,7 +221,13 @@ function legacyFixture() {
   const repo = init(path.join(dir, 'legacy-repo'), 'roots-fixture');
   const generic = path.join(dir, 'generic'); mkdirSync(generic);
   return { repo, generic, project: 'roots-fixture', commit: run('git', ['rev-parse', 'HEAD'], { cwd: repo }),
-    cleanup() { assert.ok(dir.startsWith(base + path.sep)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } };
+    cleanup() {
+      assert.ok(dir.startsWith(base + path.sep));
+      for (let attempt = 0; ; attempt++) {
+        try { rmSync(dir, { recursive: true, force: true }); return; }
+        catch (error) { if (error.code !== 'EPERM' || attempt === 20) throw error; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250); }
+      }
+    } };
 }
 test('[CBM-ROOTS-DISCOVERY] a generic-cwd session gates and recovers a root reported by the host', { timeout: 180000 }, async () => {
   const f = legacyFixture();
@@ -246,15 +262,36 @@ test('[CBM-ROOTS-DISCOVERY] a generic-cwd session gates and recovers a root repo
     // re-prepare the repository, reopen the gate, and serve queries again.
     writeFileSync(path.join(f.repo, '.codebase-memory/artifact.json'), JSON.stringify({ schema_version: 2, project: f.project, commit: f.commit }));
     session.send({ id: 90002, result: { roots: [{ uri: pathToFileURL(f.repo).href }] } });
-    // The native working graph is registered under the path-derived name.
-    const nativeName = nativeProjectName(f.repo);
-    const deadline = Date.now() + 90000; let recovered;
+    // The native working graph is registered under a path-derived name; its
+    // exact normalization is native-owned (a POSIX absolute path derives a
+    // leading-dash difference), so resolve it through the diagnostic tools
+    // the gate always forwards instead of guessing the spelling.
+    const nativeName = nativeProjectName(f.repo).replace(/^-+/, '');
+    const probe = async () => {
+      const payload = result => {
+        try { return result?.structuredContent ?? JSON.parse(result?.content?.find(part => part.type === 'text')?.text ?? '{}'); }
+        catch { return undefined; }
+      };
+      for (const candidate of new Set([nativeName, nativeProjectName(f.repo)])) {
+        const status = await session.request('tools/call', { name: 'index_status', arguments: { project: candidate, format: 'json' } }).catch(() => undefined);
+        const data = payload(status);
+        if (!status?.isError && data?.root_path && path.resolve(data.root_path) === path.resolve(f.repo)) return candidate;
+      }
+      const listed = await session.request('tools/call', { name: 'list_projects', arguments: {} }).catch(() => undefined);
+      const data = payload(listed);
+      const entry = (data?.projects ?? data?.available_projects ?? []).find(item => (item.project ?? item) && path.resolve((item.root_path ?? '').toString()) === path.resolve(f.repo));
+      return entry?.project;
+    };
+    const deadline = Date.now() + 90000; let recovered, registered;
     do {
       await new Promise(resolve => setTimeout(resolve, 1000));
-      recovered = await session.request('tools/call', { name: 'search_graph', arguments: { project: nativeName, query: 'rootsFixture' } }).catch(() => undefined);
-    } while (recovered?.isError && Date.now() < deadline);
+      registered = await probe();
+      if (!registered) continue;
+      recovered = await session.request('tools/call', { name: 'search_graph', arguments: { project: registered, query: 'rootsFixture' } }).catch(() => undefined);
+    } while ((!registered || recovered?.isError) && Date.now() < deadline);
+    assert.ok(registered, 'the recovered working graph must be registered under the reported root');
     assert.equal(recovered.isError, false, JSON.stringify(recovered.content));
-    indexedProjects.push(nativeName);
+    indexedProjects.push(registered);
   } finally {
     session?.close(); await new Promise(resolve => setTimeout(resolve, 500)); f.cleanup();
     for (const project of indexedProjects) run(binaryPath(), ['cli', '--quiet', '--json', 'delete_project', '--project', project]);
