@@ -138,6 +138,12 @@ test('[CBM-PROJECT-GATE] native project aliases, paths and both compare targets 
     const stale = new ReadinessGate(async () => ({ root: f.root, project: 'child' }), f.root);
     stale.register([{ name: 'search_graph', inputSchema: { properties: { project: {} } } }]); stale.fail([f.child], 'stale database must remain blocked');
     await assert.rejects(stale.check('search_graph', { project: path.join(f.root, 'renamed.db') }), /remain blocked/);
+    writeFileSync(path.join(f.child, '.codebase-memory/artifact.json'), '{broken');
+    for (const project of [f.child.replaceAll('\\', '/').replace(/[^\w.-]/g, '-').replace(/-+/g, '-'), `child-main-${'a'.repeat(40)}`]) {
+      const damaged = new ReadinessGate(async () => ({ root: f.root, project }), f.root);
+      damaged.register([{ name: 'search_graph', inputSchema: { properties: { project: {} } } }]); damaged.fail([f.child], 'corrupt metadata cannot release old database');
+      await assert.rejects(damaged.check('search_graph', { project: path.join(f.root, 'old.db') }), /cannot release/);
+    }
   } finally { f.cleanup(); }
 });
 

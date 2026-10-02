@@ -80,13 +80,14 @@ export function workingRoots(cwd) {
 }
 
 function canonicalRoot(root) { try { return path.resolve(realpathSync(root)); } catch { return path.resolve(root); } }
+function nativeProject(root) { return root.replaceAll('\\', '/').replace(/[^\w.-]/g, '-').replace(/-+/g, '-'); }
 export class ReadinessGate {
   constructor(resolve, defaultRoot) { this.resolve = resolve; this.defaultRoot = defaultRoot; this.tools = new Map(); this.failures = new Map(); this.identities = new Map(); }
   register(tools) { for (const tool of tools) this.tools.set(tool.name, tool.inputSchema); }
   fail(roots, message) {
     for (const value of roots) {
       const root = canonicalRoot(value); this.failures.set(root, message);
-      const aliases = new Set([root]);
+      const aliases = new Set([root, nativeProject(root)]);
       for (const name of ['artifact.json', 'selection.json']) {
         try { const project = JSON.parse(readFileSync(path.join(root, '.codebase-memory', name), 'utf8')).project; if (typeof project === 'string') aliases.add(project); } catch { /* Keep the root barrier even when metadata is unreadable. */ }
       }
@@ -115,7 +116,9 @@ export class ReadinessGate {
       catch { throw new Error('Project identity cannot be resolved while repository preparation has failed'); }
       if (typeof identity === 'string') identity = { root: identity };
       if (!identity?.root) throw new Error('Project identity cannot be resolved while repository preparation has failed');
-      const matched = [...this.identities].find(([, aliases]) => aliases.has(value) || (identity.project && aliases.has(identity.project)));
+      const matched = [...this.identities].find(([, aliases]) => [value, identity.project].some(project =>
+        typeof project === 'string' && [...aliases].some(alias => project === alias ||
+          (project.startsWith(`${alias}-main-`) && /^[a-f0-9]{40}$/.test(project.slice(alias.length + 6))))));
       const failure = this.failures.get(canonicalRoot(identity.root)) ?? (matched ? this.failures.get(matched[0]) : undefined);
       if (failure) throw new Error(failure);
     }
