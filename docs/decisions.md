@@ -30,6 +30,17 @@
 - 四仓库发布工具必须解析原生 `indexed` 成功状态；`degraded`、未知、缺失或其他状态在生成 manifest 前失败。`ready` 与正节点数只用于可用性检查，不能证明完整成功。
 - 回归覆盖两种 MCP 返回格式、JSONC 项位置/嵌套/注释及 CLI 失败；原生 MCP 测试验证新路径与子目录启动后的实时更新。长期维护证据以脚本、文档和各子仓库 canonical OpenSpec 为准。
 
+## 异步生命周期修复（2026-10-03）
+
+复审指出上一轮仍有三处 P2 异步生命周期缺陷和一处回归时序失效，本轮集中修复：
+
+- **准备轮次隔离**：`ReadinessGate` 为每个仓库维护递增轮次，`beginRound` 后的 `success`/`fail` 只在回调轮次仍是最新时生效。启动后台准备的成功不再清除更新的显式 prepare 失败；旧回调也不能覆盖较新失败。
+- **关闭状态与后台取消**：进程统一跟踪准备子进程与创建中/已建立的 native 会话；宿主 stdin EOF（以及 SIGINT/SIGTERM）立即进入关闭状态，取消在跑准备、释放所有会话，关闭后才完成的创建也会立刻释放，不再出现 observer 泄漏或残留 wrapper。
+- **握手完全解耦**：协议进程不再执行任何同步项目身份解析。启动根 `git rev-parse` 改为异步；工作区清单扫描与宿主上报根的 alias/路径归一化移入独立 `roots` / `opted` 子进程并只回传 JSON；扫描期间查询由门禁 pending 挡住，等本次准备结果而不穿透。
+- **回归时序校正**：排队用例的 barrier 改由 fixture 注入实现自身锁前的 `services.repository` 读取（旧版在调用 prepareMain 前等待，卡不住真正的锁前快照，2/2 误通过）；历史回放脚本改成替换 `api()` 签名与函数体，并新增携带锁前快照的提交作为第二个负向控制。
+
+回归证据：Workspace `npm test` 61/61、`npm run test:mcp` 1/1；三个子仓 `npm run test:codebase-memory` 各 42/42；历史回放 `387c1b2` 11 条用例失败、`7e9b0e1` 排队两例失败。新增 [CBM-PREPARE-ROUNDS]、[CBM-STARTUP-ISOLATION]、[CBM-LIFECYCLE-EARLY] 对上一版客户端均失败，[CBM-LIFECYCLE-NORMAL] 覆盖正常退出后已建立 watcher 会话确实消失。
+
 ## 其他待办（需要另行确认后再做）
 
 - 子仓库文档中若有"物理嵌套在 LiteLLM 部署仓库目录下"之类的旧描述（如 `pi-litellm-provider/AGENTS.md`、`openspec/config.yaml`），应在各自仓库通过 PR 更新；这不在总仓库迁移范围内。

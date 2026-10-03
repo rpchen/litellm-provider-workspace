@@ -14,11 +14,11 @@
 | MCP 参数门禁 | 只比较 project 原始字符串，遗漏比较目标、别名、路径与旧数据库名 | 从原生 tools/list schema 识别项目字段；原生 index_status 解析 root 与数据库内部项目；覆盖接受的别名参数、路径、双方比较、原生路径名与 main 快照名 | PROJECT-GATE；MCP-GATE 实际原生 schema＋stdio 六种失败调用；损坏 metadata＋陈旧数据库 root 的单测 |
 | 已选择子仓 metadata | 异常被当作未启用，子仓从预期集合消失 | 显式选择与未启用分开；损坏/身份不符阻止整体准备；缺失工作 artifact 仍纳入集合并恢复；所有预期回执与 Git/marker 身份核对 | SELECTED-METADATA 三类；MISSING-METADATA 恢复成功/失败；ALL-RECEIPTS 缺失、重复、伪造 branch/index SHA/marker SHA |
 
-共享实现、34 条 main 回归、Git API fixture 与历史回放脚本在四仓库逐字节同步。Workspace 的 9 条 client 回归维护跨客户端入口。每个 Scenario 在三个子仓 `harden-main-index-sync` tasks 中映射到同名自动化入口。
+共享实现、36 条 main 回归、Git API fixture 与历史回放脚本在四仓库逐字节同步。Workspace 的 15 条 client 回归维护跨客户端入口，其中 [CBM-PREPARE-ROUNDS]、[CBM-STARTUP-ISOLATION]、[CBM-LIFECYCLE-EARLY] 是本轮异步生命周期修复的负向控制。每个 Scenario 在三个子仓 `harden-main-index-sync` tasks 中映射到同名自动化入口。
 
 ## 负向控制与实际 I/O
 
-`node scripts/codebase-memory-review-baseline.mjs 387c1b2` 对审核前 Workspace 实现复用同一断言，仅替换外部仓库信息、索引服务、原生索引和 API I/O：11 条所选用例失败，复现旧 SHA 被报 ready、同 SHA 用户分支被快进、未提交源码被接受、有效缓存 rename 输家失败和旧队列 group。
+`node scripts/codebase-memory-review-baseline.mjs 387c1b2 7e9b0e1` 对两段历史实现复用同一断言，只把 `api()` 的签名与函数体换成 fixture hook（此前切到 `missing()` 会删掉 `remaining()` 等旧状态机仍调用的辅助函数，把真实旧故障掩盖成 ReferenceError）。审核前提交下 11 条所选用例失败，复现旧 SHA 被报 ready、同 SHA 用户分支被快进、未提交源码被接受、有效缓存 rename 输家失败和旧队列 group；携带锁前快照的 `7e9b0e1` 下 [CBM-QUEUED-LOCK] 与 [CBM-QUEUED-USER-CHANGE] 均失败。
 
 实际旧 stdio client 加同一 native 回归，六个调用的 `isError` 全为 false；修复后全部拒绝。另一个真实 Git 控制中，旧 workingRoots 忽略损坏的已选择 child，仅返回父仓；新实现抛出 metadata 错误。fixture 使用临时 bare remote、独立 checkout、实际 Git 分支/ref/HEAD/文件/暂存状态；索引服务可模拟，Git 状态并非 mock。
 

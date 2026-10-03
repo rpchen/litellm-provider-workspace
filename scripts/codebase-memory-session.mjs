@@ -48,7 +48,7 @@ export class McpSession {
     for (const pending of this.pending.values()) { pending.cleanup(); pending.reject(error); }
     this.pending.clear();
   }
-  close() { this.fail(new Error('MCP session closed')); this.child.stdin.end(); this.child.kill(); }
+  close() { if (!this.closed) this.fail(new Error('MCP session closed')); if (!this.child.stdin.destroyed) this.child.stdin.end(); this.child.kill(); }
 }
 export async function startSession(cwd, options) {
   const session = new McpSession(cwd, options);
