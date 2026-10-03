@@ -8,12 +8,11 @@ import path from 'node:path';
 import { run } from './codebase-memory.mjs';
 const revision = process.argv[2] ?? 'HEAD';
 // The stale pre-lock snapshot defect was introduced after the original review
-// baseline and removed by a later fix. The queued regression only means
-// something against a revision that really carries that snapshot, so callers
-// name it explicitly; without it the same revision is replayed, which is the
-// historical control that must still fail. The default is repository-neutral:
-// every repository passes its own commit.
-const queuedRevision = process.argv[3] ?? revision;
+// baseline and removed by a later fix, and the commit that carries it differs
+// per repository. The queued phase therefore needs an explicit revision:
+// without it only the audit-baseline replay runs, and the queued controls are
+// reported as skipped instead of silently passing against the wrong history.
+const queuedRevision = process.argv[3];
 const base = path.resolve('.tmp'); mkdirSync(base, { recursive: true });
 const output = mkdtempSync(path.join(base, 'cbm-old-review-'));
 
@@ -87,4 +86,5 @@ function replay(label, name, pattern, expect) {
   for (const expected of expect) if (!log.includes(expected)) throw new Error(`Expected ${expected} to fail against ${name}`);
 }
 replay('review', revision, 'CBM-RETARGET|CBM-CONCURRENT-CHECKOUT.*same-SHA|CBM-WAIT-MAIN|CBM-DIRTY-BUILD|CBM-NATIVE-BASIS|CBM-PARALLEL-CACHE|CBM-SHA-QUEUE', ['CBM-RETARGET', 'CBM-DIRTY-BUILD']);
-replay('queued', queuedRevision, 'CBM-QUEUED-LOCK|CBM-QUEUED-USER-CHANGE', ['CBM-QUEUED-LOCK', 'CBM-QUEUED-USER-CHANGE']);
+if (queuedRevision) replay('queued', queuedRevision, 'CBM-QUEUED-LOCK|CBM-QUEUED-USER-CHANGE', ['CBM-QUEUED-LOCK', 'CBM-QUEUED-USER-CHANGE']);
+else console.log('Queued replay skipped: pass the commit that carries the stale pre-lock snapshot as the second argument.');

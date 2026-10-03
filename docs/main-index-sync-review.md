@@ -18,7 +18,16 @@
 
 ## 负向控制与实际 I/O
 
-`node scripts/codebase-memory-review-baseline.mjs 387c1b2 7e9b0e1` 对两段历史实现复用同一断言，只把 `api()` 的签名与函数体换成 fixture hook（此前切到 `missing()` 会删掉 `remaining()` 等旧状态机仍调用的辅助函数，把真实旧故障掩盖成 ReferenceError）。审核前提交下 11 条所选用例失败，复现旧 SHA 被报 ready、同 SHA 用户分支被快进、未提交源码被接受、有效缓存 rename 输家失败和旧队列 group；携带锁前快照的 `7e9b0e1` 下 [CBM-QUEUED-LOCK] 与 [CBM-QUEUED-USER-CHANGE] 均失败。
+`node scripts/codebase-memory-review-baseline.mjs <审核前提交> <携带锁前快照的提交>` 对两段历史实现复用同一断言，只把 `api()` 的签名与函数体换成 fixture hook（此前切到 `missing()` 会删掉 `remaining()` 等旧状态机仍调用的辅助函数，把真实旧故障掩盖成 ReferenceError）。审核前提交下 11 条所选用例失败，复现旧 SHA 被报 ready、同 SHA 用户分支被快进、未提交源码被接受、有效缓存 rename 输家失败和旧队列 group；携带锁前快照的提交下 [CBM-QUEUED-LOCK] 与 [CBM-QUEUED-USER-CHANGE] 均失败。该提交每个仓库不同，第二个参数必须显式传入；缺省时排队回放报告 skipped 而不是静默通过：
+
+| 仓库 | 审核前提交 | 携带锁前快照的提交 |
+|---|---|---|
+| Workspace | `387c1b2` | `7e9b0e1` |
+| Core | `b9ba6e2` | `68deaa6` |
+| OpenCode | `fd2f61a` | `198dd54` |
+| Pi | `81f8a21` | `bf39784` |
+
+实测：审核前提交 11 条用例失败；携带锁前快照的提交排队两例失败（Core/OpenCode/Pi 分别为 `68deaa6`、`198dd54`、`bf39784`，Workspace 为 `7e9b0e1`）。
 
 实际旧 stdio client 加同一 native 回归，六个调用的 `isError` 全为 false；修复后全部拒绝。另一个真实 Git 控制中，旧 workingRoots 忽略损坏的已选择 child，仅返回父仓；新实现抛出 metadata 错误。fixture 使用临时 bare remote、独立 checkout、实际 Git 分支/ref/HEAD/文件/暂存状态；索引服务可模拟，Git 状态并非 mock。
 
