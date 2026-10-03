@@ -22,6 +22,7 @@ description: Advance a change that spans litellm-discovery-core and the Pi/OpenC
 9. **OpenSpec task/evidence**：把实施与证据回填到各仓库 change 的 tasks；跨仓库 change 的任务按仓库分组、标注 PR 依赖与合入顺序。
 10. **OpenSpec archive + strict validation**：每个仓库的 change 完成后，用 OpenSpec CLI archive（不手工移动目录），同步 canonical specs，并执行 `openspec validate --all --strict --no-interactive`。
 11. **PR / CI**：每个仓库一个 PR，PR 描述互链并写明合入顺序（通常 core 在前）；required CI 全绿。不得自行合并，除非用户明确要求。
+    对已选择 merged-main 的仓库，合并后还必须等待准确 main SHA 的完整 CI 与索引发布成功，再调用 finish_codebase_task，确认本地回到最新 main、不可变索引与远端字节一致，才报告该仓库收尾完成。
 12. **适用时 Release**：合入 `feat:`/`fix:` 的子仓库按其 AGENTS.md 发版（版本号提升、tag、Release）；打 tag 前向用户确认，不自行打 tag/Release。
 13. **retrospective**：全部仓库完成后，运行 `.agents/skills/project-retrospective` 收尾。
 

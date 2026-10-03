@@ -50,15 +50,27 @@ test('[CBM-WATCH] cloned roots, nested cwd and independent workspace children up
       const cwd = mode === 'nested'?path.join(clone,'nested'):clone; mkdirSync(cwd,{recursive:true});
       session = await startSession(cwd,{timeout:90000});
       projects.add(JSON.parse(readFileSync(path.join(clone,'.codebase-memory/artifact.json'),'utf8')).project);
-      const localProject = JSON.parse(readFileSync(path.join(target,'.codebase-memory/artifact.json'),'utf8')).project;
-      projects.add(localProject);
-      const statusResult = await call(session,'index_status',{project:localProject,format:'json'});
+      // The wrapper hands the handshake back immediately while the startup
+      // preparation still runs in the background; the working graph for the
+      // clone only exists once that refresh rewrote the artifact marker.
+      // Wait for the preparation outcome instead of racing it.
+      const preparedProject = await (async () => {
+        const deadline = Date.now()+90000;
+        for (;;) {
+          const localProject = JSON.parse(readFileSync(path.join(target,'.codebase-memory/artifact.json'),'utf8')).project;
+          if (localProject !== portable) return localProject;
+          assert.ok(Date.now()<deadline,'startup preparation did not register the clone working graph');
+          await pause(1000);
+        }
+      })();
+      projects.add(preparedProject);
+      const statusResult = await call(session,'index_status',{project:preparedProject,format:'json'});
       assert.equal(statusResult.isError,false,text(statusResult));
       const status = toolData(statusResult);
       projects.add(status.project);
       assert.equal(status.status,'ready'); assert.notEqual(status.project,portable);
       assert.equal(path.resolve(status.root_path),path.resolve(target));
-      const search = ()=>call(session,'search_graph',{project:localProject,label:'Function',name_pattern:'(beforeChange|afterChange)',limit:10});
+      const search = ()=>call(session,'search_graph',{project:preparedProject,label:'Function',name_pattern:'(beforeChange|afterChange)',limit:10});
       assert.match(text(await search()),/beforeChange/);
       writeFileSync(path.join(target,'example.ts'),'export function afterChange() { return 2; }\n');
       const deadline = Date.now()+60000;

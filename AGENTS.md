@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## 每个新任务与合并收尾的索引协议
+
+已入库的 `.codebase-memory/selection.json` 显式选择 merged-main 分发。每个新任务先调用 `prepare_codebase_task`（mode=new，当前任务 cwd），即使 MCP 连接被复用也必须执行；最新源码 main 与准确 SHA 的索引均 ready 后才开始实施。授权合并 PR 后调用 `finish_codebase_task`，确认本地回到最新 main、本地与远端不可变快照字节一致，才报告收尾完成。CLI 后备入口是 `node scripts/codebase-memory-main.mjs prepare` / `finish`。未完成工作只能显式 resume，不自动 stash/reset/clean。原生 artifact.json/graph.db.zst 是被忽略的工作输出；准备完成后读取其 project/root/status/coverage 再查询。索引长期保存在专用分支，工作区仍不打产品 tag 或创建 Release。
+
 本文件是 AI 编码代理在本工作区（`litellm-provider` 总项目）工作时必须遵守的约定。跨仓库协作与治理的工作流见 `.agents/skills/`（`workspace-baseline` / `cross-repo-change` / `project-retrospective`）。
 
 ## 这是什么

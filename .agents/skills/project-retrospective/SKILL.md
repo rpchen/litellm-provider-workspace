@@ -24,6 +24,8 @@ description: Close a significant task or session in the LiteLLM Provider workspa
 
 ## 输出格式
 
+已选择 merged-main 分发的仓库还须核对 ready.json 的源码 SHA、原生 project/root 与远端不可变快照校验值。只有 PR merged、索引发布 pending、尚停留在任务分支或源代码/索引 SHA 不同，都不算合并收尾完成。
+
 - 逐项检查结果（通过 / 发现问题 + 所在仓库）；
 - 发现的漂移与缺口清单：本次修复了哪些、哪些记录为后续治理事项（不顺手修改超范围内容）；
 - 本次任务各仓库的完成状态：整体是否闭环；未闭环项逐条列出。

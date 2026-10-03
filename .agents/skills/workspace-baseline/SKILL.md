@@ -7,6 +7,8 @@ description: Establish the factual baseline of the LiteLLM Provider multi-reposi
 
 在开始新的规划、实现、修复、Release 或跨会话继续工作前，用本 skill 重新建立事实基线。**不得因为上一会话声称已完成，就跳过事实检查**；聊天历史、AI memory、上一会话结论不能代替当前事实核查。
 
+已选择 merged-main 分发的仓库，每个新任务先按 AGENTS.md 调用 prepare_codebase_task（mode=new），确认最新 main 与准确 SHA 的索引都 ready。该准备协议承担已授权的安全 fast-forward；本 skill 随后只读记录事实，不自行切分支。未完成工作只能显式 resume，不能把 resume 结果称为新任务准备完成。
+
 ## 检查范围
 
 对本次任务涉及的每个仓库（从 `litellm-discovery-core`、`pi-litellm-provider`、`opencode-litellm-provider` 中选取，必要时含 workspace 总仓库本身）逐一核对：

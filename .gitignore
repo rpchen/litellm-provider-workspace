@@ -34,3 +34,7 @@ Thumbs.db
 /litellm-discovery-core/
 /opencode-litellm-provider/
 /pi-litellm-provider/
+
+# Generated working indexes; immutable shared snapshots live on codebase-memory-index.
+/.codebase-memory/*
+!/.codebase-memory/selection.json
