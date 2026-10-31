@@ -17,12 +17,13 @@ description: Advance a change that spans litellm-discovery-core and the Pi/OpenC
 4. **Core 完成自动化证据**：跑 core 的提交前校验（`npm run typecheck`、`bun test`、`npm run build:dist`、`npm run test:package`、`npm run validate:spec`），PR 合入 `main`。**core 合入 main 并产生稳定 SHA 后，才进入 adapter 步骤。**
 5. **更新 Pi/OpenCode adapter**：各自开功能分支，用 `build:dist` 拉取新 core SHA、更新 `dist/` 与 `dist/core-provenance.json`、调整宿主适配层；**一次更新构建只使用一个 core SHA**。
 6. **adapter Scenario evidence**：每个 adapter 的 OpenSpec Scenario 都要有可追踪自动化证据（Pi：贯穿 Core → Pi state → command/UI；OpenCode：贯穿 Core → ProviderSnapshot → command/RPC → TUI）。
-7. **适用的真实宿主 E2E**：涉及宿主契约/用户可见宿主行为的变更，必须让对应真实宿主门禁通过（Pi 0.87.1 E2E / OpenCode 2.0.16 E2E，见各自 AGENTS.md）。模拟宿主不能替代。
+7. **适用的真实宿主 E2E**：涉及宿主契约/用户可见宿主行为的变更，必须让对应真实宿主门禁通过（门禁名称、当前宿主的受支持范围与精确固定版本以 `litellm-discovery-core/docs/testing-standard.md` 第 4 节为唯一共享权威；具体版本以每次运行的 host input 与日志为准，**不要在这里写死版本号**）。真实宿主 E2E 允许"本轮完整矩阵"或"已验证基线 + 当前交付验证"，可复用基线的输入比较、禁止递归、当前候选交付验证与如实汇总要求见同一文件第 4.1 节。模拟宿主不能替代。
 8. **README 同步**：改动影响用户实际使用方式（安装、配置、命令、默认值、错误降级、迁移）的仓库，同一 PR 更新其 README；无用户可见变化时在 PR 写明 `No README change: no user-visible behavior`。
 9. **OpenSpec task/evidence**：把实施与证据回填到各仓库 change 的 tasks；跨仓库 change 的任务按仓库分组、标注 PR 依赖与合入顺序。
 10. **OpenSpec archive + strict validation**：每个仓库的 change 完成后，用 OpenSpec CLI archive（不手工移动目录），同步 canonical specs，并执行 `openspec validate --all --strict --no-interactive`。
 11. **PR / CI**：每个仓库一个 PR，PR 描述互链并写明合入顺序（通常 core 在前）；required CI 全绿。不得自行合并，除非用户明确要求。
     对已选择 merged-main 的仓库，合并后还必须等待准确 main SHA 的完整 CI 与索引发布成功，再调用 finish_codebase_task，确认本地回到最新 main、不可变索引与远端字节一致，才报告该仓库收尾完成。
+    共享政策措辞（例如 Core `docs/testing-standard.md` 的门禁/证据定义）必须先合入，引用它的 adapter 与 workspace 改动随后合入：并行 PR 必须在描述里互链并写明 `Core → adapters → workspace` 顺序，权威文本合入前任何一侧都不得声明该政策已在主干生效。
 12. **适用时 Release**：合入 `feat:`/`fix:` 的子仓库按其 AGENTS.md 发版（版本号提升、tag、Release）；打 tag 前向用户确认，不自行打 tag/Release。
 13. **retrospective**：全部仓库完成后，运行 `.agents/skills/project-retrospective` 收尾。
 

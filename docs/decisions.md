@@ -52,3 +52,13 @@
 ## main 索引同步审核修复（2026-10-02）
 
 本轮修复现有四条 PR 的七类安全缺陷：最终 main 再核验、symbolic branch 保护、SHA 隔离排队、固定干净源码、缓存竞争赢家校验、MCP 项目身份门禁和已选子仓完整回执。保持每 SHA 不可变快照、现有仓库合并/保护策略和产品边界；不合并、不发版、不变更 dist/provenance。MCP 能阻止失败项目的图谱工具访问，宿主新任务的 prepare 调用和任意 shell/编辑器行为仍是文档约定，不能伪称强制拦截。详细协议、来源兼容边界与回归入口见 docs/codebase-memory.md。
+
+## 跨仓库真实宿主 E2E 输入复用（2026-10-31）
+
+- 共享质量权威仍是 `litellm-discovery-core/docs/testing-standard.md`（第 4 节宿主基线与第 4.1 节复用政策）。workspace 只记录协调约定，不复制细则。
+- 每个 PR 与 main 的常规 CI、以及准确 main SHA 的索引发布不变；真实宿主 E2E 允许"本轮完整矩阵"或"已验证基线 + 当前交付验证"。基线只能是同仓实际完整矩阵成功运行，禁止递归，delivery/专项结果永不作为基线；输入不同或证据缺失一律完整运行。
+- 发行侧责任保留：Pi tag 继续完整真实宿主 E2E；Pi Release 的 tarball/checksum 与解包 `dist` 回读仍是发行验收责任；OpenCode 当前 tag 工作流没有真实宿主 E2E，不声称、也不新增该要求。
+- 跨仓库协调文件只引用 Core 权威：`.agents/skills/cross-repo-change` 第 7 步不再硬编码宿主版本（原 `Pi 0.87.1` / `OpenCode 2.0.16` 已因 CI 改为每轮解析 latest 而失真），具体版本以各次运行的 host input 与日志为准。
+- 合入顺序：Core（权威措辞）→ Pi/OpenCode 各自 `release-governance`/E2E change → workspace 协调文件。三方并行评审时 PR 描述互链并写明顺序；本 agent 不合并、不打 tag、不发版。
+
+workspace.json 的本地 verify 同步列入新宿主/复用辅助校验；OpenCode npm test移除原本与CI独立步骤重复的工具测试后，workspace verify显式保留索引工具与OpenSpec闭环命令，不能因拆命令丢失本地覆盖。

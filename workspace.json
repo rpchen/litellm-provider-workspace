@@ -11,7 +11,9 @@
         ["bun", "test"],
         ["npm", "run", "build:dist"],
         ["npm", "run", "test:package"],
-        ["npm", "run", "validate:spec"]
+        ["npm", "run", "validate:spec"],
+        ["npm", "run", "test:openspec-closure"],
+        ["npm", "run", "test:release-metadata"]
       ]
     },
     {
@@ -25,10 +27,14 @@
         ["npm", "run", "test:delivery"],
         ["npm", "run", "typecheck"],
         ["npm", "test"],
+        ["npm", "run", "test:codebase-memory"],
+        ["npm", "run", "test:e2e-gate"],
         ["npm", "run", "test:tui-render"],
         ["npm", "run", "test:distribution"],
         ["npm", "run", "test:package"],
-        ["npm", "run", "validate:spec"]
+        ["npm", "run", "validate:spec"],
+        ["npm", "run", "test:openspec-closure"],
+        ["npm", "run", "test:release-metadata"]
       ]
     },
     {
@@ -44,7 +50,9 @@
         ["bun", "run", "test:package"],
         ["npm", "run", "validate:spec"],
         ["npm", "run", "test:openspec-closure"],
-        ["npm", "run", "test:release-metadata"]
+        ["npm", "run", "test:release-metadata"],
+        ["npm", "run", "test:e2e-gate"],
+        ["npm", "run", "test:e2e:pi:inputs"]
       ]
     }
   ]
