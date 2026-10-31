@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "merged-main",
+  "repository": "rpchen/litellm-provider-workspace",
+  "commit": "5be777d7d31b23d378ed5a527d9fa324ee0d8d71",
+  "tree": "db221dd992dfb535690f397c8e3c9fdcceb705e4",
+  "project": "litellm-provider-workspace-main-5be777d7d31b23d378ed5a527d9fa324ee0d8d71",
+  "cbm_version": "0.11.0",
+  "source": {
+    "kind": "isolated-git",
+    "commit": "5be777d7d31b23d378ed5a527d9fa324ee0d8d71",
+    "tree": "db221dd992dfb535690f397c8e3c9fdcceb705e4",
+    "clean": true
+  },
+  "sha256": {
+    "graph.db.zst": "8f40ec92f15bc3109a81251d17c60c587b01ef5c751028ee6bb1ebf261c24c86",
+    "artifact.json": "7942e96b06e984c8eebb3115cad7177b68876f1baab44b11106e004f18a2b3f9"
+  }
+}
